@@ -193,7 +193,93 @@ func (a *AnthropicAdapter) translateMessage(m Message) anthropicMessage {
 	return am
 }
 
-// ParseResponse is implemented in the next task.
+// --- Anthropic response types ---
+
+type anthropicResponse struct {
+	ID         string             `json:"id"`
+	Type       string             `json:"type"`
+	Role       string             `json:"role"`
+	Model      string             `json:"model"`
+	Content    []anthropicRespContent `json:"content"`
+	StopReason string             `json:"stop_reason"`
+	Usage      anthropicUsage     `json:"usage"`
+}
+
+type anthropicRespContent struct {
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	Thinking  string          `json:"thinking,omitempty"`
+	Signature string          `json:"signature,omitempty"`
+}
+
+type anthropicUsage struct {
+	InputTokens          int `json:"input_tokens"`
+	OutputTokens         int `json:"output_tokens"`
+	CacheReadInputTokens int `json:"cache_read_input_tokens"`
+	CacheCreationTokens  int `json:"cache_creation_input_tokens"`
+}
+
 func (a *AnthropicAdapter) ParseResponse(body []byte, req *Request) (*Response, error) {
-	return nil, &Error{Kind: ErrAdapter, Provider: "anthropic", Message: "not implemented"}
+	var ar anthropicResponse
+	if err := json.Unmarshal(body, &ar); err != nil {
+		return nil, &Error{Kind: ErrAdapter, Provider: "anthropic", Message: "failed to unmarshal response", Cause: err, Raw: body}
+	}
+
+	msg := Message{Role: RoleAssistant}
+	for _, c := range ar.Content {
+		switch c.Type {
+		case "text":
+			msg.Content = append(msg.Content, ContentPart{Kind: ContentText, Text: c.Text})
+		case "tool_use":
+			msg.Content = append(msg.Content, ContentPart{
+				Kind: ContentToolCall,
+				ToolCall: &ToolCallData{
+					ID:        c.ID,
+					Name:      c.Name,
+					Arguments: c.Input,
+				},
+			})
+		case "thinking":
+			msg.Content = append(msg.Content, ContentPart{
+				Kind: ContentThinking,
+				Thinking: &ThinkingData{
+					Text:      c.Thinking,
+					Signature: c.Signature,
+				},
+			})
+		}
+	}
+
+	return &Response{
+		ID:       ar.ID,
+		Model:    ar.Model,
+		Provider: "anthropic",
+		Message:  msg,
+		FinishReason: mapAnthropicFinishReason(ar.StopReason),
+		Usage: Usage{
+			InputTokens:      ar.Usage.InputTokens,
+			OutputTokens:     ar.Usage.OutputTokens,
+			CacheReadTokens:  ar.Usage.CacheReadInputTokens,
+			CacheWriteTokens: ar.Usage.CacheCreationTokens,
+		},
+		Raw: body,
+	}, nil
+}
+
+func mapAnthropicFinishReason(raw string) FinishReason {
+	reason := "stop"
+	switch raw {
+	case "end_turn", "stop_sequence":
+		reason = "stop"
+	case "max_tokens":
+		reason = "length"
+	case "tool_use":
+		reason = "tool_calls"
+	default:
+		reason = raw
+	}
+	return FinishReason{Reason: reason, Raw: raw}
 }

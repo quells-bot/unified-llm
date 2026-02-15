@@ -195,3 +195,98 @@ func TestAnthropicProvider(t *testing.T) {
 		t.Errorf("got %q, want %q", got, "anthropic")
 	}
 }
+
+func TestAnthropicParseResponse_SimpleText(t *testing.T) {
+	a := NewAnthropicAdapter()
+	body := loadGolden(t, "anthropic/response_simple_text.json")
+	resp, err := a.ParseResponse(body, &Request{Model: "anthropic.claude-sonnet-4-5-20250514"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.ID != "msg_123" {
+		t.Errorf("ID = %q", resp.ID)
+	}
+	if resp.Model != "claude-sonnet-4-5-20250514" {
+		t.Errorf("Model = %q", resp.Model)
+	}
+	if resp.Provider != "anthropic" {
+		t.Errorf("Provider = %q", resp.Provider)
+	}
+	if resp.Text() != "Hello! How can I help you?" {
+		t.Errorf("Text = %q", resp.Text())
+	}
+	if resp.FinishReason.Reason != "stop" {
+		t.Errorf("FinishReason.Reason = %q", resp.FinishReason.Reason)
+	}
+	if resp.FinishReason.Raw != "end_turn" {
+		t.Errorf("FinishReason.Raw = %q", resp.FinishReason.Raw)
+	}
+	if resp.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d", resp.Usage.InputTokens)
+	}
+	if resp.Usage.OutputTokens != 25 {
+		t.Errorf("OutputTokens = %d", resp.Usage.OutputTokens)
+	}
+	if resp.Usage.CacheReadTokens != 5 {
+		t.Errorf("CacheReadTokens = %d", resp.Usage.CacheReadTokens)
+	}
+	if resp.Usage.CacheWriteTokens != 10 {
+		t.Errorf("CacheWriteTokens = %d", resp.Usage.CacheWriteTokens)
+	}
+}
+
+func TestAnthropicParseResponse_ToolUse(t *testing.T) {
+	a := NewAnthropicAdapter()
+	body := loadGolden(t, "anthropic/response_tool_use.json")
+	resp, err := a.ParseResponse(body, &Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.FinishReason.Reason != "tool_calls" {
+		t.Errorf("FinishReason.Reason = %q", resp.FinishReason.Reason)
+	}
+	calls := resp.ToolCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(calls))
+	}
+	if calls[0].ID != "toolu_abc" {
+		t.Errorf("ID = %q", calls[0].ID)
+	}
+	if calls[0].Name != "get_weather" {
+		t.Errorf("Name = %q", calls[0].Name)
+	}
+	var args map[string]string
+	json.Unmarshal(calls[0].Arguments, &args)
+	if args["location"] != "San Francisco" {
+		t.Errorf("location = %q", args["location"])
+	}
+	if resp.Text() != "Let me check the weather." {
+		t.Errorf("Text = %q", resp.Text())
+	}
+}
+
+func TestAnthropicParseResponse_WithThinking(t *testing.T) {
+	a := NewAnthropicAdapter()
+	body := loadGolden(t, "anthropic/response_with_thinking.json")
+	resp, err := a.ParseResponse(body, &Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have 2 content parts: thinking + text
+	if len(resp.Message.Content) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(resp.Message.Content))
+	}
+	thinking := resp.Message.Content[0]
+	if thinking.Kind != ContentThinking {
+		t.Errorf("first part kind = %q", thinking.Kind)
+	}
+	if thinking.Thinking.Text != "Let me reason about this..." {
+		t.Errorf("thinking text = %q", thinking.Thinking.Text)
+	}
+	if thinking.Thinking.Signature != "sig_abc123" {
+		t.Errorf("signature = %q", thinking.Thinking.Signature)
+	}
+	if resp.Text() != "Here is my answer." {
+		t.Errorf("Text = %q", resp.Text())
+	}
+}
