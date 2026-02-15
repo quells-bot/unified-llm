@@ -2,8 +2,11 @@ package llm
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
 // CompleteFunc is the signature for the core completion call and middleware next functions.
@@ -119,7 +122,51 @@ func (c *Client) Complete(ctx context.Context, req *Request) (*Response, error) 
 	return fn(ctx, req)
 }
 
-// classifyBedrockError is a stub that will be implemented in Task 10.
 func classifyBedrockError(provider string, err error) error {
-	return &Error{Kind: ErrServer, Provider: provider, Message: "bedrock error", Cause: err}
+	var kind ErrorKind
+	msg := err.Error()
+
+	// Check for specific Bedrock exception types
+	var accessDenied *types.AccessDeniedException
+	var validation *types.ValidationException
+	var notFound *types.ResourceNotFoundException
+	var throttling *types.ThrottlingException
+	var timeout *types.ModelTimeoutException
+	var internal *types.InternalServerException
+	var modelErr *types.ModelErrorException
+
+	switch {
+	case errors.As(err, &accessDenied):
+		kind = ErrAuthentication
+	case errors.As(err, &validation):
+		kind = ErrInvalidRequest
+	case errors.As(err, &notFound):
+		kind = ErrNotFound
+	case errors.As(err, &throttling):
+		kind = ErrRateLimit
+	case errors.As(err, &timeout):
+		kind = ErrServer
+	case errors.As(err, &internal):
+		kind = ErrServer
+	case errors.As(err, &modelErr):
+		kind = ErrServer
+	default:
+		// Check message content for additional classification
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "context length") || strings.Contains(lower, "too many tokens"):
+			kind = ErrContextLength
+		case strings.Contains(lower, "content filter") || strings.Contains(lower, "guardrail"):
+			kind = ErrContentFilter
+		default:
+			kind = ErrServer
+		}
+	}
+
+	return &Error{
+		Kind:     kind,
+		Provider: provider,
+		Message:  msg,
+		Cause:    err,
+	}
 }
