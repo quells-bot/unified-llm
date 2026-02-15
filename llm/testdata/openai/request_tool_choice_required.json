@@ -1,0 +1,24 @@
+{
+  "model": "us.amazon.nova-pro-v1:0",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Do something"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "my_tool",
+        "description": "A tool",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    }
+  ],
+  "tool_choice": "required"
+}

@@ -1,0 +1,9 @@
+{
+  "model": "us.amazon.nova-pro-v1:0",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello"
+    }
+  ]
+}

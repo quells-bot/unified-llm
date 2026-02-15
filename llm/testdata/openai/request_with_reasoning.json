@@ -1,0 +1,10 @@
+{
+  "model": "us.amazon.nova-pro-v1:0",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Think hard"
+    }
+  ],
+  "reasoning_effort": "high"
+}
