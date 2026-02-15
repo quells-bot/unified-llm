@@ -214,7 +214,6 @@ type Request struct {
     StopSequences    []string          // optional
     ReasoningEffort  string            // "low", "medium", "high" (OpenAI reasoning models)
     ProviderOptions  map[string]any    // escape hatch for provider-specific params
-    CachePrefixIndex int               // Messages[0:CachePrefixIndex] should be cached (0 = no conversation caching)
 }
 ```
 
@@ -342,9 +341,6 @@ Translates to/from the Anthropic Messages API format.
 
 1. On the last content block of the `system` array: add `"cache_control": {"type": "ephemeral"}`.
 2. On the last tool definition (if tools are present): add `"cache_control": {"type": "ephemeral"}`.
-3. If `req.CachePrefixIndex > 0`: on the last content block of `Messages[CachePrefixIndex-1]`, add `"cache_control": {"type": "ephemeral"}`.
-
-This uses at most 3 of the 4 allowed breakpoints.
 
 **Response translation (`ParseResponse`):**
 
@@ -540,11 +536,10 @@ The Anthropic adapter auto-injects `cache_control: {"type": "ephemeral"}` breakp
 |---|---|---|
 | 1 | Last content block of the `system` array | Cache system prompt across all turns |
 | 2 | Last tool definition | Cache tool definitions across all turns |
-| 3 | Last content block of `Messages[CachePrefixIndex-1]` | Cache conversation prefix (if `CachePrefixIndex > 0`) |
 
-Anthropic allows up to 4 breakpoints. This uses at most 3, leaving room for caller-specified breakpoints via `ProviderOptions` if needed.
+Anthropic allows up to 4 breakpoints. This uses 2, leaving room for caller-specified breakpoints via `ProviderOptions` if needed.
 
-**Cache lifetime:** 5 minutes, refreshed on each hit. For agentic loops where turns complete within 5 minutes, system prompt and tools get near-100% cache hit rates. Conversation prefix caching is best-effort — if a tool execution takes longer than 5 minutes, the cache expires and you pay full price (same as without caching).
+**Cache lifetime:** 5 minutes, refreshed on each hit. System prompt and tool definitions are stable across turns, so they get near-100% cache hit rates as long as turns complete within 5 minutes.
 
 **Usage reporting:** `Usage.CacheReadTokens` and `Usage.CacheWriteTokens` are populated from the Anthropic response's `cache_read_input_tokens` and `cache_creation_input_tokens` fields.
 
@@ -600,10 +595,9 @@ if resp.FinishReason.Reason == "tool_calls" {
         llm.ToolResultMessage(tc.ID, result, false),
     )
     resp, err = client.Complete(ctx, &llm.Request{
-        Model:            "anthropic.claude-sonnet-4-5-20250514",
-        Messages:         messages,
-        Tools:            tools,
-        CachePrefixIndex: len(originalMessages), // cache the prefix
+        Model:    "anthropic.claude-sonnet-4-5-20250514",
+        Messages: messages,
+        Tools:    tools,
     })
 }
 ```
