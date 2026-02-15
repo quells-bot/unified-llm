@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -173,4 +174,191 @@ func TestNewToolNoDescription(t *testing.T) {
 	tool := NewTool("ping", "Ping a host", StringParam("host"))
 	want := `{"type":"object","properties":{"host":{"type":"string"}},"required":["host"]}`
 	assertJSONEqual(t, tool.Parameters, []byte(want))
+}
+
+func TestToolCallDataParseArgs(t *testing.T) {
+	tc := ToolCallData{
+		ID:        "call-1",
+		Name:      "test",
+		Arguments: json.RawMessage(`{"name":"alice","age":30,"score":9.5,"active":true}`),
+	}
+	args, err := tc.ParseArgs()
+	if err != nil {
+		t.Fatalf("ParseArgs: %v", err)
+	}
+	if s, ok := args.String("name"); !ok || s != "alice" {
+		t.Errorf("String(name) = %q, %v", s, ok)
+	}
+	if f, ok := args.Float64("age"); !ok || f != 30 {
+		t.Errorf("Float64(age) = %v, %v", f, ok)
+	}
+	if i, ok := args.Int("age"); !ok || i != 30 {
+		t.Errorf("Int(age) = %v, %v", i, ok)
+	}
+	if f, ok := args.Float64("score"); !ok || f != 9.5 {
+		t.Errorf("Float64(score) = %v, %v", f, ok)
+	}
+	if b, ok := args.Bool("active"); !ok || !b {
+		t.Errorf("Bool(active) = %v, %v", b, ok)
+	}
+}
+
+func TestToolCallDataParseArgsEmpty(t *testing.T) {
+	tc := ToolCallData{ID: "call-2", Name: "noop"}
+	args, err := tc.ParseArgs()
+	if err != nil {
+		t.Fatalf("ParseArgs: %v", err)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty args, got %v", args)
+	}
+}
+
+func TestToolCallDataParseArgsInvalid(t *testing.T) {
+	tc := ToolCallData{
+		ID:        "call-3",
+		Name:      "bad",
+		Arguments: json.RawMessage(`not json`),
+	}
+	_, err := tc.ParseArgs()
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestToolCallArgsMissingKey(t *testing.T) {
+	args := ToolCallArgs{"x": float64(1)}
+	if _, ok := args.String("missing"); ok {
+		t.Error("expected ok=false for missing key")
+	}
+	if _, ok := args.Float64("missing"); ok {
+		t.Error("expected ok=false for missing key")
+	}
+	if _, ok := args.Int("missing"); ok {
+		t.Error("expected ok=false for missing key")
+	}
+	if _, ok := args.Bool("missing"); ok {
+		t.Error("expected ok=false for missing key")
+	}
+}
+
+func TestToolCallArgsWrongType(t *testing.T) {
+	args := ToolCallArgs{"val": "text"}
+	if _, ok := args.Float64("val"); ok {
+		t.Error("expected ok=false for wrong type")
+	}
+	if _, ok := args.Int("val"); ok {
+		t.Error("expected ok=false for wrong type")
+	}
+	if _, ok := args.Bool("val"); ok {
+		t.Error("expected ok=false for wrong type")
+	}
+}
+
+func TestToolCallDataResult(t *testing.T) {
+	tc := ToolCallData{ID: "call-10", Name: "test"}
+	m := tc.Result(`{"ok":true}`)
+	if m.Role != RoleTool {
+		t.Errorf("got role %q, want %q", m.Role, RoleTool)
+	}
+	tr := m.Content[0].ToolResult
+	if tr.ToolCallID != "call-10" || tr.Content != `{"ok":true}` || tr.IsError {
+		t.Errorf("unexpected result: %+v", tr)
+	}
+}
+
+func TestToolCallDataErrorResult(t *testing.T) {
+	tc := ToolCallData{ID: "call-11", Name: "test"}
+	m := tc.ErrorResult(`{"error":"boom"}`)
+	tr := m.Content[0].ToolResult
+	if tr.ToolCallID != "call-11" || !tr.IsError {
+		t.Errorf("unexpected error result: %+v", tr)
+	}
+}
+
+func TestToolDefinitionParseArgs(t *testing.T) {
+	tool := NewTool("order", "Get order",
+		IntegerParam("user_id"),
+		StringParam("note"),
+		OptionalBoolParam("verbose"),
+	)
+	tc := ToolCallData{
+		ID:        "call-20",
+		Name:      "order",
+		Arguments: json.RawMessage(`{"user_id":42,"note":"rush"}`),
+	}
+	args, err := tool.ParseArgs(tc)
+	if err != nil {
+		t.Fatalf("ParseArgs: %v", err)
+	}
+	if id, ok := args.Int("user_id"); !ok || id != 42 {
+		t.Errorf("Int(user_id) = %v, %v", id, ok)
+	}
+	if s, ok := args.String("note"); !ok || s != "rush" {
+		t.Errorf("String(note) = %v, %v", s, ok)
+	}
+}
+
+func TestToolDefinitionParseArgsMissingRequired(t *testing.T) {
+	tool := NewTool("order", "Get order",
+		IntegerParam("user_id"),
+		IntegerParam("order_id"),
+	)
+	tc := ToolCallData{
+		ID:        "call-21",
+		Name:      "order",
+		Arguments: json.RawMessage(`{"user_id":1}`),
+	}
+	_, err := tool.ParseArgs(tc)
+	if err == nil {
+		t.Fatal("expected error for missing required param")
+	}
+	want := `missing required parameter "order_id"`
+	if err.Error() != want {
+		t.Errorf("got %q, want %q", err.Error(), want)
+	}
+}
+
+func TestToolDefinitionParseArgsWrongType(t *testing.T) {
+	tool := NewTool("order", "Get order", IntegerParam("user_id"))
+	tc := ToolCallData{
+		ID:        "call-22",
+		Name:      "order",
+		Arguments: json.RawMessage(`{"user_id":"not_a_number"}`),
+	}
+	_, err := tool.ParseArgs(tc)
+	if err == nil {
+		t.Fatal("expected error for wrong type")
+	}
+}
+
+func TestToolDefinitionParseArgsMissingOptionalOK(t *testing.T) {
+	tool := NewTool("order", "Get order",
+		IntegerParam("user_id"),
+		OptionalStringParam("note"),
+	)
+	tc := ToolCallData{
+		ID:        "call-23",
+		Name:      "order",
+		Arguments: json.RawMessage(`{"user_id":1}`),
+	}
+	args, err := tool.ParseArgs(tc)
+	if err != nil {
+		t.Fatalf("ParseArgs: %v", err)
+	}
+	if _, ok := args.String("note"); ok {
+		t.Error("expected ok=false for absent optional param")
+	}
+}
+
+func TestToolDefinitionParseArgsNoParams(t *testing.T) {
+	tool := NewTool("ping", "Ping")
+	tc := ToolCallData{ID: "call-24", Name: "ping"}
+	args, err := tool.ParseArgs(tc)
+	if err != nil {
+		t.Fatalf("ParseArgs: %v", err)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty args, got %v", args)
+	}
 }

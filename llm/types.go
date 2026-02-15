@@ -2,6 +2,7 @@ package llm
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -46,6 +47,69 @@ type ToolCallData struct {
 	ID        string          // provider-assigned unique ID
 	Name      string          // tool name
 	Arguments json.RawMessage // parsed JSON arguments
+}
+
+// ParseArgs unmarshals the tool call's JSON arguments into a ToolCallArgs map.
+func (tc ToolCallData) ParseArgs() (ToolCallArgs, error) {
+	args := make(ToolCallArgs)
+	if len(tc.Arguments) > 0 {
+		if err := json.Unmarshal(tc.Arguments, &args); err != nil {
+			return nil, err
+		}
+	}
+	return args, nil
+}
+
+// Result creates a successful tool result message for this call.
+func (tc ToolCallData) Result(content string) Message {
+	return ToolResultMessage(tc.ID, content, false)
+}
+
+// ErrorResult creates an error tool result message for this call.
+func (tc ToolCallData) ErrorResult(content string) Message {
+	return ToolResultMessage(tc.ID, content, true)
+}
+
+// ToolCallArgs provides typed access to parsed tool call arguments.
+type ToolCallArgs map[string]any
+
+// String returns the string value for the given key.
+func (a ToolCallArgs) String(name string) (string, bool) {
+	v, ok := a[name]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
+}
+
+// Float64 returns the float64 value for the given key.
+func (a ToolCallArgs) Float64(name string) (float64, bool) {
+	v, ok := a[name]
+	if !ok {
+		return 0, false
+	}
+	f, ok := v.(float64)
+	return f, ok
+}
+
+// Int returns the value for the given key as an int (truncating any decimal).
+func (a ToolCallArgs) Int(name string) (int, bool) {
+	f, ok := a.Float64(name)
+	if !ok {
+		return 0, false
+	}
+	return int(f), ok
+}
+
+// Bool returns the boolean value for the given key.
+func (a ToolCallArgs) Bool(name string) (bool, bool) {
+	v, ok := a[name]
+	if !ok {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
 }
 
 type ToolResultData struct {
@@ -138,6 +202,42 @@ type ToolDefinition struct {
 	Name        string          // unique identifier
 	Description string          // human-readable description
 	Parameters  json.RawMessage // JSON Schema with root type "object"
+	params      []Param         // retained from NewTool for runtime validation
+}
+
+// ParseArgs unmarshals a tool call's arguments and validates them against
+// the parameter definitions (required checks, type checks).
+func (td ToolDefinition) ParseArgs(tc ToolCallData) (ToolCallArgs, error) {
+	args := make(ToolCallArgs)
+	if len(tc.Arguments) > 0 {
+		if err := json.Unmarshal(tc.Arguments, &args); err != nil {
+			return nil, err
+		}
+	}
+	for _, p := range td.params {
+		v, ok := args[p.Name]
+		if !ok {
+			if p.Required {
+				return nil, fmt.Errorf("missing required parameter %q", p.Name)
+			}
+			continue
+		}
+		switch p.Type {
+		case "string":
+			if _, ok := v.(string); !ok {
+				return nil, fmt.Errorf("parameter %q: expected string, got %T", p.Name, v)
+			}
+		case "number", "integer":
+			if _, ok := v.(float64); !ok {
+				return nil, fmt.Errorf("parameter %q: expected number, got %T", p.Name, v)
+			}
+		case "boolean":
+			if _, ok := v.(bool); !ok {
+				return nil, fmt.Errorf("parameter %q: expected boolean, got %T", p.Name, v)
+			}
+		}
+	}
+	return args, nil
 }
 
 // Param describes a single tool input parameter.
@@ -212,6 +312,7 @@ func NewTool(name, description string, params ...Param) ToolDefinition {
 		Name:        name,
 		Description: description,
 		Parameters:  raw,
+		params:      params,
 	}
 }
 

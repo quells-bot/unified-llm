@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -32,6 +31,28 @@ func main() {
 		"Do not write any Markdown, code, or ASCII art. " +
 		"Be as concise and straightforward as possible."
 
+	tools := []llm.ToolDefinition{
+		llm.NewTool(
+			"get_user",
+			"Get details of the user you are conversing with",
+		),
+		llm.NewTool(
+			"list_user_orders",
+			"Get summary of a user's orders",
+			llm.IntegerParam("user_id"),
+		),
+		llm.NewTool(
+			"get_user_order",
+			"Get details of a user's order",
+			llm.IntegerParam("user_id"),
+			llm.IntegerParam("order_id"),
+		),
+	}
+	toolsByName := make(map[string]llm.ToolDefinition, len(tools))
+	for _, t := range tools {
+		toolsByName[t.Name] = t
+	}
+
 	client := llm.NewClient(
 		bd,
 		llm.WithAdapter(llm.NewOpenAIAdapter()),
@@ -47,23 +68,7 @@ func main() {
 			Model:    haiku,
 			Provider: "anthropic",
 			Messages: messages,
-			Tools: []llm.ToolDefinition{
-				llm.NewTool(
-					"get_user",
-					"Get details of the user you are conversing with",
-				),
-				llm.NewTool(
-					"list_user_orders",
-					"Get summary of a user's orders",
-					llm.IntegerParam("user_id"),
-				),
-				llm.NewTool(
-					"get_user_order",
-					"Get details of a user's order",
-					llm.IntegerParam("user_id"),
-					llm.IntegerParam("order_id"),
-				),
-			},
+			Tools:    tools,
 		})
 		if err != nil {
 			log.Printf("failed to get completion: %v", err)
@@ -77,58 +82,47 @@ func main() {
 		switch resp.FinishReason.Reason {
 		case llm.FinishReasonToolCalls:
 			for _, tc := range resp.ToolCalls() {
-				var args map[string]any
-				if len(tc.Arguments) > 0 {
-					parseErr := json.Unmarshal(tc.Arguments, &args)
-					if parseErr != nil {
-						errMsg := `{"error":"` + parseErr.Error() + `"}`
-						messages = append(messages, llm.ToolResultMessage(tc.ID, errMsg, true))
-						continue
-					}
+				tool, ok := toolsByName[tc.Name]
+				if !ok {
+					messages = append(messages, tc.ErrorResult(`{"error":"unknown tool"}`))
+					continue
+				}
+				args, parseErr := tool.ParseArgs(tc)
+				if parseErr != nil {
+					messages = append(messages, tc.ErrorResult(`{"error":"`+parseErr.Error()+`"}`))
+					continue
 				}
 				log.Printf("t %s %+v", tc.Name, args)
+
 				switch tc.Name {
 				case "get_user":
-					messages = append(messages, llm.ToolResultMessage(tc.ID, `{"user_id":123}`, false))
-				case "list_user_orders":
-					if _userID, ok := args["user_id"]; ok {
-						userID := _userID.(float64)
-						if userID == 123.0 {
-							messages = append(messages, llm.ToolResultMessage(tc.ID, `{"orders":[{"id":1000},{"id":1001},{"id":1002}]}`, false))
-						} else {
-							messages = append(messages, llm.ToolResultMessage(tc.ID, `{"error":"unknown user_id"}`, true))
-						}
-					} else {
-						messages = append(messages, llm.ToolResultMessage(tc.ID, `{"error":"missing required param user_id"}`, true))
-					}
-				case "get_user_order":
-					if _userID, ok := args["user_id"]; ok {
-						userID := _userID.(float64)
-						if userID == 123.0 {
-							if _orderID, ok := args["order_id"]; ok {
-								orderID := _orderID.(float64)
-								switch orderID {
-								case 1000.:
-									messages = append(messages, llm.ToolResultMessage(tc.ID, `{"amount":12.34}`, false))
-								case 1001.:
-									messages = append(messages, llm.ToolResultMessage(tc.ID, `{"amount":23.45}`, false))
-								case 1002.:
-									messages = append(messages, llm.ToolResultMessage(tc.ID, `{"amount":34.56}`, false))
-								default:
-									messages = append(messages, llm.ToolResultMessage(tc.ID, `{"error":"unknown order_id"}`, true))
-								}
-							} else {
-								messages = append(messages, llm.ToolResultMessage(tc.ID, `{"error":"missing required param order_id"}`, true))
-							}
-						} else {
-							messages = append(messages, llm.ToolResultMessage(tc.ID, `{"error":"unknown user_id"}`, true))
-						}
+					messages = append(messages, tc.Result(`{"user_id":123}`))
 
-					} else {
-						messages = append(messages, llm.ToolResultMessage(tc.ID, `{"error":"missing required param user_id"}`, true))
+				case "list_user_orders":
+					userID, _ := args.Int("user_id")
+					if userID != 123 {
+						messages = append(messages, tc.ErrorResult(`{"error":"unknown user_id"}`))
+						continue
 					}
-				default:
-					messages = append(messages, llm.ToolResultMessage(tc.ID, `{"error":"unknown tool"}`, true))
+					messages = append(messages, tc.Result(`{"orders":[{"id":1000},{"id":1001},{"id":1002}]}`))
+
+				case "get_user_order":
+					userID, _ := args.Int("user_id")
+					if userID != 123 {
+						messages = append(messages, tc.ErrorResult(`{"error":"unknown user_id"}`))
+						continue
+					}
+					orderID, _ := args.Int("order_id")
+					switch orderID {
+					case 1000:
+						messages = append(messages, tc.Result(`{"amount":12.34}`))
+					case 1001:
+						messages = append(messages, tc.Result(`{"amount":23.45}`))
+					case 1002:
+						messages = append(messages, tc.Result(`{"amount":34.56}`))
+					default:
+						messages = append(messages, tc.ErrorResult(`{"error":"unknown order_id"}`))
+					}
 				}
 			}
 		default:
