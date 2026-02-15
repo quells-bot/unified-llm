@@ -158,3 +158,70 @@ func TestOpenAIProvider(t *testing.T) {
 		t.Errorf("got %q, want %q", got, "openai")
 	}
 }
+
+func TestOpenAIParseResponse_SimpleText(t *testing.T) {
+	a := NewOpenAIAdapter()
+	body := loadGolden(t, "openai/response_simple_text.json")
+	resp, err := a.ParseResponse(body, &Request{Model: "us.amazon.nova-pro-v1:0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.ID != "chatcmpl-abc" {
+		t.Errorf("ID = %q", resp.ID)
+	}
+	if resp.Provider != "openai" {
+		t.Errorf("Provider = %q", resp.Provider)
+	}
+	if resp.Text() != "Hello! How can I help?" {
+		t.Errorf("Text = %q", resp.Text())
+	}
+	if resp.FinishReason.Reason != "stop" {
+		t.Errorf("FinishReason.Reason = %q", resp.FinishReason.Reason)
+	}
+	if resp.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d", resp.Usage.InputTokens)
+	}
+	if resp.Usage.OutputTokens != 20 {
+		t.Errorf("OutputTokens = %d", resp.Usage.OutputTokens)
+	}
+	if resp.Usage.CacheReadTokens != 5 {
+		t.Errorf("CacheReadTokens = %d", resp.Usage.CacheReadTokens)
+	}
+}
+
+func TestOpenAIParseResponse_ToolCalls(t *testing.T) {
+	a := NewOpenAIAdapter()
+	body := loadGolden(t, "openai/response_tool_calls.json")
+	resp, err := a.ParseResponse(body, &Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.FinishReason.Reason != "tool_calls" {
+		t.Errorf("FinishReason.Reason = %q", resp.FinishReason.Reason)
+	}
+	calls := resp.ToolCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(calls))
+	}
+	if calls[0].ID != "call_abc" {
+		t.Errorf("ID = %q", calls[0].ID)
+	}
+	if calls[0].Name != "get_weather" {
+		t.Errorf("Name = %q", calls[0].Name)
+	}
+}
+
+func TestOpenAIParseResponse_WithReasoning(t *testing.T) {
+	a := NewOpenAIAdapter()
+	body := loadGolden(t, "openai/response_with_reasoning.json")
+	resp, err := a.ParseResponse(body, &Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Usage.ReasoningTokens != 80 {
+		t.Errorf("ReasoningTokens = %d", resp.Usage.ReasoningTokens)
+	}
+	if resp.Usage.OutputTokens != 100 {
+		t.Errorf("OutputTokens = %d", resp.Usage.OutputTokens)
+	}
+}

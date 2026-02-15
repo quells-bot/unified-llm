@@ -172,7 +172,99 @@ func (a *OpenAIAdapter) translateMessage(m Message) openaiMessage {
 	return om
 }
 
-// ParseResponse is implemented in the next task.
+// --- OpenAI response types ---
+
+type openaiResponse struct {
+	ID      string          `json:"id"`
+	Model   string          `json:"model"`
+	Choices []openaiChoice  `json:"choices"`
+	Usage   openaiUsage     `json:"usage"`
+}
+
+type openaiChoice struct {
+	Index        int              `json:"index"`
+	Message      openaiRespMsg    `json:"message"`
+	FinishReason string           `json:"finish_reason"`
+}
+
+type openaiRespMsg struct {
+	Role      string           `json:"role"`
+	Content   *string          `json:"content"`
+	ToolCalls []openaiToolCall  `json:"tool_calls,omitempty"`
+}
+
+type openaiUsage struct {
+	PromptTokens     int                    `json:"prompt_tokens"`
+	CompletionTokens int                    `json:"completion_tokens"`
+	PromptDetails    *openaiPromptDetails   `json:"prompt_tokens_details,omitempty"`
+	CompletionDetails *openaiCompletionDetails `json:"completion_tokens_details,omitempty"`
+}
+
+type openaiPromptDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+type openaiCompletionDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
+}
+
 func (a *OpenAIAdapter) ParseResponse(body []byte, req *Request) (*Response, error) {
-	return nil, &Error{Kind: ErrAdapter, Provider: "openai", Message: "not implemented"}
+	var or openaiResponse
+	if err := json.Unmarshal(body, &or); err != nil {
+		return nil, &Error{Kind: ErrAdapter, Provider: "openai", Message: "failed to unmarshal response", Cause: err, Raw: body}
+	}
+
+	if len(or.Choices) == 0 {
+		return nil, &Error{Kind: ErrAdapter, Provider: "openai", Message: "response has no choices", Raw: body}
+	}
+
+	choice := or.Choices[0]
+	msg := Message{Role: RoleAssistant}
+
+	if choice.Message.Content != nil && *choice.Message.Content != "" {
+		msg.Content = append(msg.Content, ContentPart{Kind: ContentText, Text: *choice.Message.Content})
+	}
+
+	for _, tc := range choice.Message.ToolCalls {
+		msg.Content = append(msg.Content, ContentPart{
+			Kind: ContentToolCall,
+			ToolCall: &ToolCallData{
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: json.RawMessage(tc.Function.Arguments),
+			},
+		})
+	}
+
+	usage := Usage{
+		InputTokens:  or.Usage.PromptTokens,
+		OutputTokens: or.Usage.CompletionTokens,
+	}
+	if or.Usage.PromptDetails != nil {
+		usage.CacheReadTokens = or.Usage.PromptDetails.CachedTokens
+	}
+	if or.Usage.CompletionDetails != nil {
+		usage.ReasoningTokens = or.Usage.CompletionDetails.ReasoningTokens
+	}
+
+	return &Response{
+		ID:           or.ID,
+		Model:        or.Model,
+		Provider:     "openai",
+		Message:      msg,
+		FinishReason: mapOpenAIFinishReason(choice.FinishReason),
+		Usage:        usage,
+		Raw:          body,
+	}, nil
+}
+
+func mapOpenAIFinishReason(raw string) FinishReason {
+	reason := raw // OpenAI values mostly match unified values
+	switch raw {
+	case "stop", "length", "tool_calls", "content_filter":
+		// already correct
+	default:
+		reason = raw
+	}
+	return FinishReason{Reason: reason, Raw: raw}
 }

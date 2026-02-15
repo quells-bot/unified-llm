@@ -1,0 +1,24 @@
+{
+  "id": "chatcmpl-abc",
+  "model": "us.amazon.nova-pro-v1:0",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello! How can I help?"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 20,
+    "prompt_tokens_details": {
+      "cached_tokens": 5
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  }
+}
