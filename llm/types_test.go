@@ -147,3 +147,30 @@ func TestOptionalBoolParam(t *testing.T) {
 		t.Errorf("unexpected param: %+v", p)
 	}
 }
+
+func TestNewToolMixedParams(t *testing.T) {
+	tool := NewTool("get_weather", "Get the current weather",
+		StringParam("location", "The city"),
+		OptionalNumberParam("days", "Forecast days"),
+	)
+	if tool.Name != "get_weather" {
+		t.Errorf("Name = %q", tool.Name)
+	}
+	if tool.Description != "Get the current weather" {
+		t.Errorf("Description = %q", tool.Description)
+	}
+	want := `{"type":"object","properties":{"location":{"type":"string","description":"The city"},"days":{"type":"number","description":"Forecast days"}},"required":["location"]}`
+	assertJSONEqual(t, tool.Parameters, []byte(want))
+}
+
+func TestNewToolNoParams(t *testing.T) {
+	tool := NewTool("noop", "Does nothing")
+	want := `{"type":"object","properties":{},"required":[]}`
+	assertJSONEqual(t, tool.Parameters, []byte(want))
+}
+
+func TestNewToolNoDescription(t *testing.T) {
+	tool := NewTool("ping", "Ping a host", StringParam("host"))
+	want := `{"type":"object","properties":{"host":{"type":"string"}},"required":["host"]}`
+	assertJSONEqual(t, tool.Parameters, []byte(want))
+}

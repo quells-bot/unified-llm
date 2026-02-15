@@ -188,6 +188,33 @@ func OptionalBoolParam(name string, desc ...string) Param {
 	return newParam(name, "boolean", false, desc)
 }
 
+// NewTool creates a ToolDefinition with JSON Schema built from params.
+func NewTool(name, description string, params ...Param) ToolDefinition {
+	properties := make(map[string]map[string]string, len(params))
+	required := make([]string, 0, len(params))
+	for _, p := range params {
+		prop := map[string]string{"type": p.Type}
+		if p.Description != "" {
+			prop["description"] = p.Description
+		}
+		properties[p.Name] = prop
+		if p.Required {
+			required = append(required, p.Name)
+		}
+	}
+	schema := map[string]any{
+		"type":       "object",
+		"properties": properties,
+		"required":   required,
+	}
+	raw, _ := json.Marshal(schema)
+	return ToolDefinition{
+		Name:        name,
+		Description: description,
+		Parameters:  raw,
+	}
+}
+
 // Request is the unified request to any LLM provider.
 type Request struct {
 	Model           string
