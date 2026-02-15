@@ -236,6 +236,14 @@ type FinishReason struct {
 	Raw    string // provider's native string
 }
 
+const (
+	FinishReasonStop          = "stop"
+	FinishReasonLength        = "length"
+	FinishReasonToolCalls     = "tool_calls"
+	FinishReasonContentFilter = "content_filter"
+	FinishReasonError         = "error"
+)
+
 // Usage contains token counts from the response.
 type Usage struct {
 	InputTokens      int

@@ -15,15 +15,15 @@ func (a *AnthropicAdapter) Provider() string { return "anthropic" }
 // --- Anthropic request types ---
 
 type anthropicRequest struct {
-	AnthropicVersion string              `json:"anthropic_version"`
-	MaxTokens        int                 `json:"max_tokens"`
-	System           []anthropicContent  `json:"system,omitempty"`
-	Messages         []anthropicMessage  `json:"messages"`
-	Tools            []anthropicTool     `json:"tools,omitempty"`
-	ToolChoice       any                 `json:"tool_choice,omitempty"`
-	Temperature      *float64            `json:"temperature,omitempty"`
-	TopP             *float64            `json:"top_p,omitempty"`
-	StopSequences    []string            `json:"stop_sequences,omitempty"`
+	AnthropicVersion string             `json:"anthropic_version"`
+	MaxTokens        int                `json:"max_tokens"`
+	System           []anthropicContent `json:"system,omitempty"`
+	Messages         []anthropicMessage `json:"messages"`
+	Tools            []anthropicTool    `json:"tools,omitempty"`
+	ToolChoice       any                `json:"tool_choice,omitempty"`
+	Temperature      *float64           `json:"temperature,omitempty"`
+	TopP             *float64           `json:"top_p,omitempty"`
+	StopSequences    []string           `json:"stop_sequences,omitempty"`
 }
 
 type anthropicMessage struct {
@@ -32,17 +32,17 @@ type anthropicMessage struct {
 }
 
 type anthropicContent struct {
-	Type         string            `json:"type"`
-	Text         string            `json:"text,omitempty"`
-	ID           string            `json:"id,omitempty"`
-	Name         string            `json:"name,omitempty"`
-	Input        json.RawMessage   `json:"input,omitempty"`
-	ToolUseID    string            `json:"tool_use_id,omitempty"`
-	Content      string            `json:"content,omitempty"`
-	IsError      *bool             `json:"is_error,omitempty"`
-	Thinking     string            `json:"thinking,omitempty"`
-	Signature    string            `json:"signature,omitempty"`
-	CacheControl *cacheControl     `json:"cache_control,omitempty"`
+	Type         string          `json:"type"`
+	Text         string          `json:"text,omitempty"`
+	ID           string          `json:"id,omitempty"`
+	Name         string          `json:"name,omitempty"`
+	Input        json.RawMessage `json:"input,omitempty"`
+	ToolUseID    string          `json:"tool_use_id,omitempty"`
+	Content      string          `json:"content,omitempty"`
+	IsError      *bool           `json:"is_error,omitempty"`
+	Thinking     string          `json:"thinking,omitempty"`
+	Signature    string          `json:"signature,omitempty"`
+	CacheControl *cacheControl   `json:"cache_control,omitempty"`
 }
 
 type cacheControl struct {
@@ -196,13 +196,13 @@ func (a *AnthropicAdapter) translateMessage(m Message) anthropicMessage {
 // --- Anthropic response types ---
 
 type anthropicResponse struct {
-	ID         string             `json:"id"`
-	Type       string             `json:"type"`
-	Role       string             `json:"role"`
-	Model      string             `json:"model"`
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"`
+	Role       string                 `json:"role"`
+	Model      string                 `json:"model"`
 	Content    []anthropicRespContent `json:"content"`
-	StopReason string             `json:"stop_reason"`
-	Usage      anthropicUsage     `json:"usage"`
+	StopReason string                 `json:"stop_reason"`
+	Usage      anthropicUsage         `json:"usage"`
 }
 
 type anthropicRespContent struct {
@@ -254,10 +254,10 @@ func (a *AnthropicAdapter) ParseResponse(body []byte, req *Request) (*Response, 
 	}
 
 	return &Response{
-		ID:       ar.ID,
-		Model:    ar.Model,
-		Provider: "anthropic",
-		Message:  msg,
+		ID:           ar.ID,
+		Model:        ar.Model,
+		Provider:     "anthropic",
+		Message:      msg,
 		FinishReason: mapAnthropicFinishReason(ar.StopReason),
 		Usage: Usage{
 			InputTokens:      ar.Usage.InputTokens,
@@ -270,14 +270,14 @@ func (a *AnthropicAdapter) ParseResponse(body []byte, req *Request) (*Response, 
 }
 
 func mapAnthropicFinishReason(raw string) FinishReason {
-	reason := "stop"
+	reason := FinishReasonStop
 	switch raw {
 	case "end_turn", "stop_sequence":
-		reason = "stop"
+		reason = FinishReasonStop
 	case "max_tokens":
-		reason = "length"
+		reason = FinishReasonLength
 	case "tool_use":
-		reason = "tool_calls"
+		reason = FinishReasonToolCalls
 	default:
 		reason = raw
 	}

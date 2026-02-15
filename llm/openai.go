@@ -15,22 +15,22 @@ func (a *OpenAIAdapter) Provider() string { return "openai" }
 // --- OpenAI request types ---
 
 type openaiRequest struct {
-	Model           string           `json:"model"`
-	Messages        []openaiMessage  `json:"messages"`
-	Tools           []openaiTool     `json:"tools,omitempty"`
-	ToolChoice      any              `json:"tool_choice,omitempty"`
-	Temperature     *float64         `json:"temperature,omitempty"`
-	TopP            *float64         `json:"top_p,omitempty"`
-	MaxTokens       *int             `json:"max_tokens,omitempty"`
-	Stop            []string         `json:"stop,omitempty"`
-	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+	Model           string          `json:"model"`
+	Messages        []openaiMessage `json:"messages"`
+	Tools           []openaiTool    `json:"tools,omitempty"`
+	ToolChoice      any             `json:"tool_choice,omitempty"`
+	Temperature     *float64        `json:"temperature,omitempty"`
+	TopP            *float64        `json:"top_p,omitempty"`
+	MaxTokens       *int            `json:"max_tokens,omitempty"`
+	Stop            []string        `json:"stop,omitempty"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
 }
 
 type openaiMessage struct {
-	Role       string             `json:"role"`
-	Content    any                `json:"content"`               // string or null
-	ToolCalls  []openaiToolCall   `json:"tool_calls,omitempty"`
-	ToolCallID string             `json:"tool_call_id,omitempty"`
+	Role       string           `json:"role"`
+	Content    any              `json:"content"` // string or null
+	ToolCalls  []openaiToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
 
 type openaiToolCall struct {
@@ -45,8 +45,8 @@ type openaiToolFunction struct {
 }
 
 type openaiTool struct {
-	Type     string             `json:"type"`
-	Function openaiToolDef      `json:"function"`
+	Type     string        `json:"type"`
+	Function openaiToolDef `json:"function"`
 }
 
 type openaiToolDef struct {
@@ -175,28 +175,28 @@ func (a *OpenAIAdapter) translateMessage(m Message) openaiMessage {
 // --- OpenAI response types ---
 
 type openaiResponse struct {
-	ID      string          `json:"id"`
-	Model   string          `json:"model"`
-	Choices []openaiChoice  `json:"choices"`
-	Usage   openaiUsage     `json:"usage"`
+	ID      string         `json:"id"`
+	Model   string         `json:"model"`
+	Choices []openaiChoice `json:"choices"`
+	Usage   openaiUsage    `json:"usage"`
 }
 
 type openaiChoice struct {
-	Index        int              `json:"index"`
-	Message      openaiRespMsg    `json:"message"`
-	FinishReason string           `json:"finish_reason"`
+	Index        int           `json:"index"`
+	Message      openaiRespMsg `json:"message"`
+	FinishReason string        `json:"finish_reason"`
 }
 
 type openaiRespMsg struct {
 	Role      string           `json:"role"`
 	Content   *string          `json:"content"`
-	ToolCalls []openaiToolCall  `json:"tool_calls,omitempty"`
+	ToolCalls []openaiToolCall `json:"tool_calls,omitempty"`
 }
 
 type openaiUsage struct {
-	PromptTokens     int                    `json:"prompt_tokens"`
-	CompletionTokens int                    `json:"completion_tokens"`
-	PromptDetails    *openaiPromptDetails   `json:"prompt_tokens_details,omitempty"`
+	PromptTokens      int                      `json:"prompt_tokens"`
+	CompletionTokens  int                      `json:"completion_tokens"`
+	PromptDetails     *openaiPromptDetails     `json:"prompt_tokens_details,omitempty"`
 	CompletionDetails *openaiCompletionDetails `json:"completion_tokens_details,omitempty"`
 }
 
@@ -261,7 +261,10 @@ func (a *OpenAIAdapter) ParseResponse(body []byte, req *Request) (*Response, err
 func mapOpenAIFinishReason(raw string) FinishReason {
 	reason := raw // OpenAI values mostly match unified values
 	switch raw {
-	case "stop", "length", "tool_calls", "content_filter":
+	case FinishReasonStop,
+		FinishReasonLength,
+		FinishReasonToolCalls,
+		FinishReasonContentFilter:
 		// already correct
 	default:
 		reason = raw
