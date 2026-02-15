@@ -1,0 +1,209 @@
+package llm
+
+import (
+	"encoding/json"
+	"strings"
+)
+
+// Role represents a message participant.
+type Role string
+
+const (
+	RoleSystem    Role = "system"
+	RoleUser      Role = "user"
+	RoleAssistant Role = "assistant"
+	RoleTool      Role = "tool"
+)
+
+// ContentKind identifies the type of a ContentPart.
+type ContentKind string
+
+const (
+	ContentText       ContentKind = "text"
+	ContentImage      ContentKind = "image"
+	ContentToolCall   ContentKind = "tool_call"
+	ContentToolResult ContentKind = "tool_result"
+	ContentThinking   ContentKind = "thinking"
+)
+
+// ContentPart is a tagged union — only the field matching Kind is populated.
+type ContentPart struct {
+	Kind       ContentKind
+	Text       string          // Kind == ContentText
+	Image      *ImageData      // Kind == ContentImage
+	ToolCall   *ToolCallData   // Kind == ContentToolCall
+	ToolResult *ToolResultData // Kind == ContentToolResult
+	Thinking   *ThinkingData   // Kind == ContentThinking
+}
+
+type ImageData struct {
+	URL       string // URL or data URI
+	Data      []byte // raw image bytes (alternative to URL)
+	MediaType string // e.g., "image/png"
+}
+
+type ToolCallData struct {
+	ID        string          // provider-assigned unique ID
+	Name      string          // tool name
+	Arguments json.RawMessage // parsed JSON arguments
+}
+
+type ToolResultData struct {
+	ToolCallID string // correlates to ToolCallData.ID
+	Content    string // tool output (text)
+	IsError    bool   // true if tool execution failed
+}
+
+type ThinkingData struct {
+	Text      string // reasoning content
+	Signature string // Anthropic signature for round-tripping
+}
+
+// Message is a single message in a conversation.
+type Message struct {
+	Role       Role
+	Content    []ContentPart
+	ToolCallID string // for tool result messages, links to the tool call
+}
+
+// Text concatenates all text content parts in the message.
+func (m Message) Text() string {
+	var b strings.Builder
+	for _, p := range m.Content {
+		if p.Kind == ContentText {
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
+}
+
+// SystemMessage creates a system message with a single text part.
+func SystemMessage(text string) Message {
+	return Message{
+		Role:    RoleSystem,
+		Content: []ContentPart{{Kind: ContentText, Text: text}},
+	}
+}
+
+// UserMessage creates a user message with a single text part.
+func UserMessage(text string) Message {
+	return Message{
+		Role:    RoleUser,
+		Content: []ContentPart{{Kind: ContentText, Text: text}},
+	}
+}
+
+// AssistantMessage creates an assistant message with a single text part.
+func AssistantMessage(text string) Message {
+	return Message{
+		Role:      RoleAssistant,
+		Content:   []ContentPart{{Kind: ContentText, Text: text}},
+	}
+}
+
+// ToolResultMessage creates a tool result message.
+func ToolResultMessage(callID, content string, isError bool) Message {
+	return Message{
+		Role: RoleTool,
+		Content: []ContentPart{{
+			Kind: ContentToolResult,
+			ToolResult: &ToolResultData{
+				ToolCallID: callID,
+				Content:    content,
+				IsError:    isError,
+			},
+		}},
+		ToolCallID: callID,
+	}
+}
+
+// ToolChoiceMode controls how the model selects tools.
+type ToolChoiceMode string
+
+const (
+	ToolChoiceAuto     ToolChoiceMode = "auto"
+	ToolChoiceNone     ToolChoiceMode = "none"
+	ToolChoiceRequired ToolChoiceMode = "required"
+	ToolChoiceNamed    ToolChoiceMode = "named"
+)
+
+// ToolChoice specifies how the model should select tools.
+type ToolChoice struct {
+	Mode     ToolChoiceMode
+	ToolName string // required when Mode == ToolChoiceNamed
+}
+
+// ToolDefinition describes a tool the model can call.
+type ToolDefinition struct {
+	Name        string          // unique identifier
+	Description string          // human-readable description
+	Parameters  json.RawMessage // JSON Schema with root type "object"
+}
+
+// Request is the unified request to any LLM provider.
+type Request struct {
+	Model           string
+	Messages        []Message
+	Provider        string
+	Tools           []ToolDefinition
+	ToolChoice      *ToolChoice
+	Temperature     *float64
+	TopP            *float64
+	MaxTokens       *int
+	StopSequences   []string
+	ReasoningEffort string         // "low", "medium", "high"
+	ProviderOptions map[string]any // escape hatch
+}
+
+// FinishReason describes why generation stopped.
+type FinishReason struct {
+	Reason string // unified: "stop", "length", "tool_calls", "content_filter", "error"
+	Raw    string // provider's native string
+}
+
+// Usage contains token counts from the response.
+type Usage struct {
+	InputTokens      int
+	OutputTokens     int
+	CacheReadTokens  int
+	CacheWriteTokens int
+	ReasoningTokens  int
+}
+
+// Add sums two Usage values.
+func (u Usage) Add(other Usage) Usage {
+	return Usage{
+		InputTokens:      u.InputTokens + other.InputTokens,
+		OutputTokens:     u.OutputTokens + other.OutputTokens,
+		CacheReadTokens:  u.CacheReadTokens + other.CacheReadTokens,
+		CacheWriteTokens: u.CacheWriteTokens + other.CacheWriteTokens,
+		ReasoningTokens:  u.ReasoningTokens + other.ReasoningTokens,
+	}
+}
+
+// Response is the unified response from any LLM provider.
+type Response struct {
+	ID           string
+	Model        string
+	Provider     string
+	Message      Message
+	FinishReason FinishReason
+	Usage        Usage
+	Raw          []byte // raw provider response JSON
+}
+
+// Text returns concatenated text from all text content parts.
+func (r *Response) Text() string {
+	return r.Message.Text()
+}
+
+// ToolCalls returns all tool call content parts from the response message.
+func (r *Response) ToolCalls() []ToolCallData {
+	var calls []ToolCallData
+	for _, p := range r.Message.Content {
+		if p.Kind == ContentToolCall && p.ToolCall != nil {
+			calls = append(calls, *p.ToolCall)
+		}
+	}
+	return calls
+}
