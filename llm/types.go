@@ -96,8 +96,8 @@ func UserMessage(text string) Message {
 // AssistantMessage creates an assistant message with a single text part.
 func AssistantMessage(text string) Message {
 	return Message{
-		Role:      RoleAssistant,
-		Content:   []ContentPart{{Kind: ContentText, Text: text}},
+		Role:    RoleAssistant,
+		Content: []ContentPart{{Kind: ContentText, Text: text}},
 	}
 }
 
