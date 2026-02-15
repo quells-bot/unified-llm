@@ -42,7 +42,7 @@ func TestOpenAIBuildInvokeInput_WithTools(t *testing.T) {
 	req := &Request{
 		Model:    "us.amazon.nova-pro-v1:0",
 		Messages: []Message{UserMessage("What is the weather?")},
-		Tools: []ToolDefinition{NewTool("get_weather", "Get weather", StringParam("location"))},
+		Tools:    []ToolDefinition{NewTool("get_weather", "Get weather", StringParam("location"))},
 	}
 	input, err := a.BuildInvokeInput(req)
 	if err != nil {
@@ -78,9 +78,9 @@ func TestOpenAIBuildInvokeInput_ToolResult(t *testing.T) {
 func TestOpenAIBuildInvokeInput_ToolChoiceRequired(t *testing.T) {
 	a := NewOpenAIAdapter()
 	req := &Request{
-		Model:    "us.amazon.nova-pro-v1:0",
-		Messages: []Message{UserMessage("Do something")},
-		Tools: []ToolDefinition{NewTool("my_tool", "A tool")},
+		Model:      "us.amazon.nova-pro-v1:0",
+		Messages:   []Message{UserMessage("Do something")},
+		Tools:      []ToolDefinition{NewTool("my_tool", "A tool")},
 		ToolChoice: &ToolChoice{Mode: ToolChoiceRequired},
 	}
 	input, err := a.BuildInvokeInput(req)
@@ -93,9 +93,9 @@ func TestOpenAIBuildInvokeInput_ToolChoiceRequired(t *testing.T) {
 func TestOpenAIBuildInvokeInput_ToolChoiceNamed(t *testing.T) {
 	a := NewOpenAIAdapter()
 	req := &Request{
-		Model:    "us.amazon.nova-pro-v1:0",
-		Messages: []Message{UserMessage("Do something")},
-		Tools: []ToolDefinition{NewTool("my_tool", "A tool")},
+		Model:      "us.amazon.nova-pro-v1:0",
+		Messages:   []Message{UserMessage("Do something")},
+		Tools:      []ToolDefinition{NewTool("my_tool", "A tool")},
 		ToolChoice: &ToolChoice{Mode: ToolChoiceNamed, ToolName: "my_tool"},
 	}
 	input, err := a.BuildInvokeInput(req)

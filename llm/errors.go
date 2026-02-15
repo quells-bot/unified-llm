@@ -6,15 +6,15 @@ import "fmt"
 type ErrorKind int
 
 const (
-	ErrConfig        ErrorKind = iota // misconfiguration
-	ErrAdapter                        // marshal/unmarshal failure in adapter
-	ErrAuthentication                 // 401/403
-	ErrNotFound                       // 404
-	ErrInvalidRequest                 // 400
-	ErrRateLimit                      // 429
-	ErrServer                         // 500+
-	ErrContextLength                  // input too large
-	ErrContentFilter                  // blocked by safety guardrails
+	ErrConfig         ErrorKind = iota // misconfiguration
+	ErrAdapter                         // marshal/unmarshal failure in adapter
+	ErrAuthentication                  // 401/403
+	ErrNotFound                        // 404
+	ErrInvalidRequest                  // 400
+	ErrRateLimit                       // 429
+	ErrServer                          // 500+
+	ErrContextLength                   // input too large
+	ErrContentFilter                   // blocked by safety guardrails
 )
 
 var errorKindNames = [...]string{

@@ -70,7 +70,7 @@ func TestAnthropicBuildInvokeInput_WithTools(t *testing.T) {
 	req := &Request{
 		Model:    "anthropic.claude-sonnet-4-5-20250514",
 		Messages: []Message{UserMessage("What is the weather in SF?")},
-		Tools: []ToolDefinition{NewTool("get_weather", "Get the current weather", StringParam("location"))},
+		Tools:    []ToolDefinition{NewTool("get_weather", "Get the current weather", StringParam("location"))},
 	}
 	input, err := a.BuildInvokeInput(req)
 	if err != nil {
@@ -106,9 +106,9 @@ func TestAnthropicBuildInvokeInput_ToolResult(t *testing.T) {
 func TestAnthropicBuildInvokeInput_ToolChoiceRequired(t *testing.T) {
 	a := NewAnthropicAdapter()
 	req := &Request{
-		Model:    "anthropic.claude-sonnet-4-5-20250514",
-		Messages: []Message{UserMessage("Do something")},
-		Tools: []ToolDefinition{NewTool("my_tool", "A tool")},
+		Model:      "anthropic.claude-sonnet-4-5-20250514",
+		Messages:   []Message{UserMessage("Do something")},
+		Tools:      []ToolDefinition{NewTool("my_tool", "A tool")},
 		ToolChoice: &ToolChoice{Mode: ToolChoiceRequired},
 	}
 	input, err := a.BuildInvokeInput(req)
@@ -121,9 +121,9 @@ func TestAnthropicBuildInvokeInput_ToolChoiceRequired(t *testing.T) {
 func TestAnthropicBuildInvokeInput_ToolChoiceNamed(t *testing.T) {
 	a := NewAnthropicAdapter()
 	req := &Request{
-		Model:    "anthropic.claude-sonnet-4-5-20250514",
-		Messages: []Message{UserMessage("Do something")},
-		Tools: []ToolDefinition{NewTool("my_tool", "A tool")},
+		Model:      "anthropic.claude-sonnet-4-5-20250514",
+		Messages:   []Message{UserMessage("Do something")},
+		Tools:      []ToolDefinition{NewTool("my_tool", "A tool")},
 		ToolChoice: &ToolChoice{Mode: ToolChoiceNamed, ToolName: "my_tool"},
 	}
 	input, err := a.BuildInvokeInput(req)
