@@ -8,8 +8,7 @@ The primary consumer is a Temporal-based agentic workflow. Tool execution happen
 
 ### Reference
 
-- [SPEC.md](/SPEC.md) — Language-agnostic unified LLM client specification
-- [BRAINSTORM.md](/BRAINSTORM.md) — Design process guidelines
+- [ATTRACTOR_SPEC.md](/docs/ATTRACTOR_SPEC.md) — Language-agnostic unified LLM client specification that was the inspiration for this library (we have diverged from some of the design decisions in that document)
 
 ### Scope
 
@@ -38,7 +37,7 @@ Three layers, all in a single Go package (`llm`):
 ```
 ┌─────────────────────────────────────────────────┐
 │  Layer 3: Client                                │
-│  Complete(), middleware chain, provider routing  │
+│  Complete(), middleware chain, provider routing │
 ├─────────────────────────────────────────────────┤
 │  Layer 2: Adapters                              │
 │  AnthropicAdapter, OpenAIAdapter                │
@@ -280,7 +279,7 @@ func (u Usage) Add(other Usage) Usage
 
 Provider field mapping:
 
-| Unified Field    | Anthropic Field                  | OpenAI Field                                 |
+| Unified Field   | Anthropic Field                  | OpenAI Field                                 |
 |-----------------|----------------------------------|----------------------------------------------|
 | InputTokens     | usage.input_tokens               | usage.prompt_tokens                          |
 | OutputTokens    | usage.output_tokens              | usage.completion_tokens                      |
@@ -646,7 +645,7 @@ No third-party dependencies beyond the AWS SDK.
 
 ## What's Deferred
 
-These features from SPEC.md are explicitly out of scope for the initial implementation:
+These features from ATTRACTOR_SPEC.md are explicitly out of scope for the initial implementation:
 
 | Feature | Why deferred |
 |---|---|
