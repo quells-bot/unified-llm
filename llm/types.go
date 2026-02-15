@@ -140,6 +140,54 @@ type ToolDefinition struct {
 	Parameters  json.RawMessage // JSON Schema with root type "object"
 }
 
+// Param describes a single tool input parameter.
+type Param struct {
+	Name        string
+	Type        string // "string", "number", "integer", "boolean"
+	Description string
+	Required    bool
+}
+
+func newParam(name, typ string, required bool, desc []string) Param {
+	p := Param{Name: name, Type: typ, Required: required}
+	if len(desc) > 0 {
+		p.Description = desc[0]
+	}
+	return p
+}
+
+// StringParam creates a required string parameter.
+func StringParam(name string, desc ...string) Param { return newParam(name, "string", true, desc) }
+
+// OptionalStringParam creates an optional string parameter.
+func OptionalStringParam(name string, desc ...string) Param {
+	return newParam(name, "string", false, desc)
+}
+
+// NumberParam creates a required number parameter.
+func NumberParam(name string, desc ...string) Param { return newParam(name, "number", true, desc) }
+
+// OptionalNumberParam creates an optional number parameter.
+func OptionalNumberParam(name string, desc ...string) Param {
+	return newParam(name, "number", false, desc)
+}
+
+// IntegerParam creates a required integer parameter.
+func IntegerParam(name string, desc ...string) Param { return newParam(name, "integer", true, desc) }
+
+// OptionalIntegerParam creates an optional integer parameter.
+func OptionalIntegerParam(name string, desc ...string) Param {
+	return newParam(name, "integer", false, desc)
+}
+
+// BoolParam creates a required boolean parameter.
+func BoolParam(name string, desc ...string) Param { return newParam(name, "boolean", true, desc) }
+
+// OptionalBoolParam creates an optional boolean parameter.
+func OptionalBoolParam(name string, desc ...string) Param {
+	return newParam(name, "boolean", false, desc)
+}
+
 // Request is the unified request to any LLM provider.
 type Request struct {
 	Model           string

@@ -81,3 +81,69 @@ func TestMessageTextEmptyWhenNoTextParts(t *testing.T) {
 		t.Errorf("got %q, want empty string", got)
 	}
 }
+
+func TestStringParam(t *testing.T) {
+	p := StringParam("location", "The city")
+	if p.Name != "location" || p.Type != "string" || p.Description != "The city" || !p.Required {
+		t.Errorf("unexpected param: %+v", p)
+	}
+}
+
+func TestStringParamNoDescription(t *testing.T) {
+	p := StringParam("location")
+	if p.Description != "" {
+		t.Errorf("expected empty description, got %q", p.Description)
+	}
+}
+
+func TestOptionalStringParam(t *testing.T) {
+	p := OptionalStringParam("name")
+	if p.Required {
+		t.Error("expected Required=false")
+	}
+	if p.Type != "string" {
+		t.Errorf("expected type string, got %q", p.Type)
+	}
+}
+
+func TestNumberParam(t *testing.T) {
+	p := NumberParam("count")
+	if p.Type != "number" || !p.Required {
+		t.Errorf("unexpected param: %+v", p)
+	}
+}
+
+func TestOptionalNumberParam(t *testing.T) {
+	p := OptionalNumberParam("count")
+	if p.Type != "number" || p.Required {
+		t.Errorf("unexpected param: %+v", p)
+	}
+}
+
+func TestIntegerParam(t *testing.T) {
+	p := IntegerParam("count")
+	if p.Type != "integer" || !p.Required {
+		t.Errorf("unexpected param: %+v", p)
+	}
+}
+
+func TestOptionalIntegerParam(t *testing.T) {
+	p := OptionalIntegerParam("count")
+	if p.Type != "integer" || p.Required {
+		t.Errorf("unexpected param: %+v", p)
+	}
+}
+
+func TestBoolParam(t *testing.T) {
+	p := BoolParam("verbose")
+	if p.Type != "boolean" || !p.Required {
+		t.Errorf("unexpected param: %+v", p)
+	}
+}
+
+func TestOptionalBoolParam(t *testing.T) {
+	p := OptionalBoolParam("verbose")
+	if p.Type != "boolean" || p.Required {
+		t.Errorf("unexpected param: %+v", p)
+	}
+}
