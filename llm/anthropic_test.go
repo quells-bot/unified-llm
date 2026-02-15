@@ -70,11 +70,7 @@ func TestAnthropicBuildInvokeInput_WithTools(t *testing.T) {
 	req := &Request{
 		Model:    "anthropic.claude-sonnet-4-5-20250514",
 		Messages: []Message{UserMessage("What is the weather in SF?")},
-		Tools: []ToolDefinition{{
-			Name:        "get_weather",
-			Description: "Get the current weather",
-			Parameters:  json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}`),
-		}},
+		Tools: []ToolDefinition{NewTool("get_weather", "Get the current weather", StringParam("location"))},
 	}
 	input, err := a.BuildInvokeInput(req)
 	if err != nil {
@@ -98,11 +94,7 @@ func TestAnthropicBuildInvokeInput_ToolResult(t *testing.T) {
 			},
 			ToolResultMessage("call-1", "72°F and sunny", false),
 		},
-		Tools: []ToolDefinition{{
-			Name:        "get_weather",
-			Description: "Get the current weather",
-			Parameters:  json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}`),
-		}},
+		Tools: []ToolDefinition{NewTool("get_weather", "Get the current weather", StringParam("location"))},
 	}
 	input, err := a.BuildInvokeInput(req)
 	if err != nil {
@@ -116,11 +108,7 @@ func TestAnthropicBuildInvokeInput_ToolChoiceRequired(t *testing.T) {
 	req := &Request{
 		Model:    "anthropic.claude-sonnet-4-5-20250514",
 		Messages: []Message{UserMessage("Do something")},
-		Tools: []ToolDefinition{{
-			Name:        "my_tool",
-			Description: "A tool",
-			Parameters:  json.RawMessage(`{"type":"object","properties":{},"required":[]}`),
-		}},
+		Tools: []ToolDefinition{NewTool("my_tool", "A tool")},
 		ToolChoice: &ToolChoice{Mode: ToolChoiceRequired},
 	}
 	input, err := a.BuildInvokeInput(req)
@@ -135,11 +123,7 @@ func TestAnthropicBuildInvokeInput_ToolChoiceNamed(t *testing.T) {
 	req := &Request{
 		Model:    "anthropic.claude-sonnet-4-5-20250514",
 		Messages: []Message{UserMessage("Do something")},
-		Tools: []ToolDefinition{{
-			Name:        "my_tool",
-			Description: "A tool",
-			Parameters:  json.RawMessage(`{"type":"object","properties":{},"required":[]}`),
-		}},
+		Tools: []ToolDefinition{NewTool("my_tool", "A tool")},
 		ToolChoice: &ToolChoice{Mode: ToolChoiceNamed, ToolName: "my_tool"},
 	}
 	input, err := a.BuildInvokeInput(req)
