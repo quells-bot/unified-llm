@@ -9,104 +9,64 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
-// CompleteFunc is the signature for the core completion call and middleware next functions.
-type CompleteFunc func(ctx context.Context, req *Request) (*Response, error)
+// SendFunc is the signature for the core Send call and middleware next functions.
+type SendFunc func(ctx context.Context, conv *Conversation) (*Response, error)
 
-// Middleware wraps a Complete call.
-type Middleware func(ctx context.Context, req *Request, next CompleteFunc) (*Response, error)
+// Middleware wraps a Send call.
+type Middleware func(ctx context.Context, conv *Conversation, next SendFunc) (*Response, error)
 
-// Client routes requests to adapters and calls Bedrock InvokeModel.
-type Client struct {
-	bedrock         BedrockInvoker
-	adapters        map[string]Adapter
-	defaultProvider string
-	middleware      []Middleware
+// BedrockConverser abstracts the Bedrock Converse call for testing.
+type BedrockConverser interface {
+	Converse(ctx context.Context, params *bedrockruntime.ConverseInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseOutput, error)
 }
 
-type clientConfig struct {
-	adapters        []Adapter
-	defaultProvider string
-	middleware      []Middleware
+// Client calls the Bedrock Converse API.
+type Client struct {
+	bedrock    BedrockConverser
+	middleware []Middleware
 }
 
 // ClientOption configures a Client.
-type ClientOption func(*clientConfig)
-
-// WithAdapter registers an adapter with the client.
-func WithAdapter(a Adapter) ClientOption {
-	return func(c *clientConfig) {
-		c.adapters = append(c.adapters, a)
-	}
-}
-
-// WithDefaultProvider sets the default provider for requests that don't specify one.
-func WithDefaultProvider(provider string) ClientOption {
-	return func(c *clientConfig) {
-		c.defaultProvider = provider
-	}
-}
+type ClientOption func(*Client)
 
 // WithMiddleware adds middleware to the client.
 func WithMiddleware(m ...Middleware) ClientOption {
-	return func(c *clientConfig) {
+	return func(c *Client) {
 		c.middleware = append(c.middleware, m...)
 	}
 }
 
-// NewClient creates a new Client with the given Bedrock invoker and options.
-func NewClient(bedrock BedrockInvoker, opts ...ClientOption) *Client {
-	cfg := &clientConfig{}
+// NewClient creates a new Client with the given Bedrock converser and options.
+func NewClient(bedrock BedrockConverser, opts ...ClientOption) *Client {
+	c := &Client{bedrock: bedrock}
 	for _, o := range opts {
-		o(cfg)
+		o(c)
 	}
-
-	adapters := make(map[string]Adapter, len(cfg.adapters))
-	for _, a := range cfg.adapters {
-		adapters[a.Provider()] = a
-	}
-
-	return &Client{
-		bedrock:         bedrock,
-		adapters:        adapters,
-		defaultProvider: cfg.defaultProvider,
-		middleware:      cfg.middleware,
-	}
+	return c
 }
 
-// Complete sends a request to the appropriate provider and returns the response.
-func (c *Client) Complete(ctx context.Context, req *Request) (*Response, error) {
-	// Resolve provider
-	provider := req.Provider
-	if provider == "" {
-		provider = c.defaultProvider
-	}
-	if provider == "" {
-		return nil, &Error{Kind: ErrConfig, Message: "no provider specified and no default provider set"}
-	}
+// Send appends the provided messages to a copy of the conversation,
+// calls Bedrock Converse, appends the assistant response, accumulates usage,
+// and returns the updated conversation and per-turn response.
+func (c *Client) Send(ctx context.Context, conv Conversation, messages ...Message) (Conversation, *Response, error) {
+	// Copy messages slice so caller's conversation is not mutated
+	conv.Messages = append(append([]Message(nil), conv.Messages...), messages...)
 
-	adapter, ok := c.adapters[provider]
-	if !ok {
-		return nil, &Error{Kind: ErrConfig, Provider: provider, Message: "no adapter registered for provider"}
-	}
-
-	// Build the core function
-	core := func(ctx context.Context, req *Request) (*Response, error) {
-		input, err := adapter.BuildInvokeInput(req)
+	core := func(ctx context.Context, conv *Conversation) (*Response, error) {
+		input := toConverseInput(conv)
+		output, err := c.bedrock.Converse(ctx, input)
+		if err != nil {
+			return nil, classifyBedrockError(err)
+		}
+		msg, usage, reason, err := fromConverseOutput(output)
 		if err != nil {
 			return nil, err
 		}
-
-		output, err := c.bedrock.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
-			ModelId:     &input.ModelID,
-			Body:        input.Body,
-			ContentType: &input.ContentType,
-			Accept:      &input.Accept,
-		})
-		if err != nil {
-			return nil, classifyBedrockError(provider, err)
-		}
-
-		return adapter.ParseResponse(output.Body, req)
+		return &Response{
+			Message:      *msg,
+			FinishReason: reason,
+			Usage:        *usage,
+		}, nil
 	}
 
 	// Wrap with middleware (first registered = outermost)
@@ -114,19 +74,27 @@ func (c *Client) Complete(ctx context.Context, req *Request) (*Response, error) 
 	for i := len(c.middleware) - 1; i >= 0; i-- {
 		mw := c.middleware[i]
 		next := fn
-		fn = func(ctx context.Context, req *Request) (*Response, error) {
-			return mw(ctx, req, next)
+		fn = func(ctx context.Context, conv *Conversation) (*Response, error) {
+			return mw(ctx, conv, next)
 		}
 	}
 
-	return fn(ctx, req)
+	resp, err := fn(ctx, &conv)
+	if err != nil {
+		return conv, nil, err
+	}
+
+	// Append assistant response and accumulate usage
+	conv.Messages = append(conv.Messages, resp.Message)
+	conv.Usage = conv.Usage.Add(resp.Usage)
+
+	return conv, resp, nil
 }
 
-func classifyBedrockError(provider string, err error) error {
+func classifyBedrockError(err error) error {
 	var kind ErrorKind
 	msg := err.Error()
 
-	// Check for specific Bedrock exception types
 	var accessDenied *types.AccessDeniedException
 	var validation *types.ValidationException
 	var notFound *types.ResourceNotFoundException
@@ -151,7 +119,6 @@ func classifyBedrockError(provider string, err error) error {
 	case errors.As(err, &modelErr):
 		kind = ErrServer
 	default:
-		// Check message content for additional classification
 		lower := strings.ToLower(msg)
 		switch {
 		case strings.Contains(lower, "context length") || strings.Contains(lower, "too many tokens"):
@@ -164,9 +131,8 @@ func classifyBedrockError(provider string, err error) error {
 	}
 
 	return &Error{
-		Kind:     kind,
-		Provider: provider,
-		Message:  msg,
-		Cause:    err,
+		Kind:    kind,
+		Message: msg,
+		Cause:   err,
 	}
 }
