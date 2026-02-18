@@ -9,7 +9,13 @@ import (
 	"github.com/quells-bot/unified-llm/llm"
 )
 
-const haiku = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+const (
+	gptOss20B  = "openai.gpt-oss-20b-1:0"
+	gptOss120B = "openai.gpt-oss-120b-1:0"
+	haiku      = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+	sonnet     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+)
+
 
 func main() {
 	ctx := context.Background()
@@ -33,7 +39,10 @@ func main() {
 
 	client := llm.NewClient(bd)
 
-	conv := llm.NewConversation(haiku,
+	model := haiku
+
+	conv := llm.NewConversation(
+		model,
 		llm.WithSystem("You are a service representative engaged in a polite conversation with a customer. "+
 			"Anything you say to the user will be written to a simple chat interface, so respond with plain text. "+
 			"Do not write any Markdown, code, or ASCII art. "+
