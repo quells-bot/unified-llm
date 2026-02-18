@@ -27,9 +27,25 @@ func toConverseInput(conv *Conversation) *bedrockruntime.ConverseInput {
 		})
 	}
 
-	// Messages
-	for _, m := range conv.Messages {
-		input.Messages = append(input.Messages, toConverseMessage(m, isAnthropicModel(conv.Model)))
+	// Messages — consecutive RoleTool messages must be merged into a single
+	// user message because Bedrock requires all tool results for an assistant
+	// turn to appear in one message.
+	isAnthropic := isAnthropicModel(conv.Model)
+	for i := 0; i < len(conv.Messages); {
+		m := conv.Messages[i]
+		if m.Role != RoleTool {
+			input.Messages = append(input.Messages, toConverseMessage(m, isAnthropic))
+			i++
+			continue
+		}
+		// Collect all consecutive tool-result messages.
+		merged := types.Message{Role: types.ConversationRoleUser}
+		for i < len(conv.Messages) && conv.Messages[i].Role == RoleTool {
+			cm := toConverseMessage(conv.Messages[i], isAnthropic)
+			merged.Content = append(merged.Content, cm.Content...)
+			i++
+		}
+		input.Messages = append(input.Messages, merged)
 	}
 
 	// Inference config

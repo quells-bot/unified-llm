@@ -211,6 +211,38 @@ func TestToConverseInput_ToolResultError(t *testing.T) {
 	}
 }
 
+func TestToConverseInput_MultipleToolResultsMerged(t *testing.T) {
+	conv := Conversation{
+		Model: "us.amazon.nova-pro-v1:0",
+		Messages: []Message{
+			{Role: RoleUser, Content: []ContentPart{{Kind: ContentText, Text: "go"}}},
+			{Role: RoleAssistant, Content: []ContentPart{
+				{Kind: ContentToolCall, ToolCall: &ToolCallData{ID: "call-1", Name: "foo", Arguments: []byte(`{}`)}},
+				{Kind: ContentToolCall, ToolCall: &ToolCallData{ID: "call-2", Name: "bar", Arguments: []byte(`{}`)}},
+			}},
+			ToolResultMessage("call-1", "result-1", false),
+			ToolResultMessage("call-2", "result-2", false),
+		},
+	}
+	input := toConverseInput(&conv)
+	// The two RoleTool messages must be merged into one Bedrock message.
+	if len(input.Messages) != 3 {
+		t.Fatalf("Messages len = %d, want 3 (user, assistant, merged tool results)", len(input.Messages))
+	}
+	merged := input.Messages[2]
+	if merged.Role != types.ConversationRoleUser {
+		t.Errorf("merged role = %v", merged.Role)
+	}
+	if len(merged.Content) != 2 {
+		t.Fatalf("merged content len = %d, want 2", len(merged.Content))
+	}
+	id0 := *merged.Content[0].(*types.ContentBlockMemberToolResult).Value.ToolUseId
+	id1 := *merged.Content[1].(*types.ContentBlockMemberToolResult).Value.ToolUseId
+	if id0 != "call-1" || id1 != "call-2" {
+		t.Errorf("tool use ids = %q, %q", id0, id1)
+	}
+}
+
 func TestFromConverseOutput_SimpleText(t *testing.T) {
 	out := &bedrockruntime.ConverseOutput{
 		Output: &types.ConverseOutputMemberMessage{
