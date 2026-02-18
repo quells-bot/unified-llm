@@ -23,7 +23,7 @@ func toConverseInput(conv *Conversation) *bedrockruntime.ConverseInput {
 	// Anthropic: add cache point after last system block
 	if isAnthropicModel(conv.Model) && len(input.System) > 0 {
 		input.System = append(input.System, &types.SystemContentBlockMemberCachePoint{
-			Value: types.CachePointBlock{},
+			Value: types.CachePointBlock{Type: types.CachePointTypeDefault},
 		})
 	}
 
@@ -72,7 +72,7 @@ func toConverseInput(conv *Conversation) *bedrockruntime.ConverseInput {
 		}
 		// Anthropic: add cache point after last tool
 		if isAnthropicModel(conv.Model) {
-			tc.Tools = append(tc.Tools, &types.ToolMemberCachePoint{Value: types.CachePointBlock{}})
+			tc.Tools = append(tc.Tools, &types.ToolMemberCachePoint{Value: types.CachePointBlock{Type: types.CachePointTypeDefault}})
 		}
 		// Tool choice
 		if conv.Config.ToolChoice != nil {
