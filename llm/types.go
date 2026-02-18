@@ -29,24 +29,24 @@ const (
 
 // ContentPart is a tagged union — only the field matching Kind is populated.
 type ContentPart struct {
-	Kind       ContentKind
-	Text       string          // Kind == ContentText
-	Image      *ImageData      // Kind == ContentImage
-	ToolCall   *ToolCallData   // Kind == ContentToolCall
-	ToolResult *ToolResultData // Kind == ContentToolResult
-	Thinking   *ThinkingData   // Kind == ContentThinking
+	Kind       ContentKind     `json:"kind"`
+	Text       string          `json:"text,omitempty"`
+	Image      *ImageData      `json:"image,omitempty"`
+	ToolCall   *ToolCallData   `json:"tool_call,omitempty"`
+	ToolResult *ToolResultData `json:"tool_result,omitempty"`
+	Thinking   *ThinkingData   `json:"thinking,omitempty"`
 }
 
 type ImageData struct {
-	URL       string // URL or data URI
-	Data      []byte // raw image bytes (alternative to URL)
-	MediaType string // e.g., "image/png"
+	URL       string `json:"url,omitempty"`
+	Data      []byte `json:"data,omitempty"`
+	MediaType string `json:"media_type,omitempty"`
 }
 
 type ToolCallData struct {
-	ID        string          // provider-assigned unique ID
-	Name      string          // tool name
-	Arguments json.RawMessage // parsed JSON arguments
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 // ParseArgs unmarshals the tool call's JSON arguments into a ToolCallArgs map.
@@ -113,21 +113,21 @@ func (a ToolCallArgs) Bool(name string) (bool, bool) {
 }
 
 type ToolResultData struct {
-	ToolCallID string // correlates to ToolCallData.ID
-	Content    string // tool output (text)
-	IsError    bool   // true if tool execution failed
+	ToolCallID string `json:"tool_call_id"`
+	Content    string `json:"content"`
+	IsError    bool   `json:"is_error,omitempty"`
 }
 
 type ThinkingData struct {
-	Text      string // reasoning content
-	Signature string // Anthropic signature for round-tripping
+	Text      string `json:"text"`
+	Signature string `json:"signature,omitempty"`
 }
 
 // Message is a single message in a conversation.
 type Message struct {
-	Role       Role
-	Content    []ContentPart
-	ToolCallID string // for tool result messages, links to the tool call
+	Role       Role          `json:"role"`
+	Content    []ContentPart `json:"content"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
 }
 
 // Text concatenates all text content parts in the message.
@@ -139,6 +139,17 @@ func (m Message) Text() string {
 		}
 	}
 	return b.String()
+}
+
+// ToolCalls returns all tool call content parts in the message.
+func (m Message) ToolCalls() []ToolCallData {
+	var calls []ToolCallData
+	for _, p := range m.Content {
+		if p.Kind == ContentToolCall && p.ToolCall != nil {
+			calls = append(calls, *p.ToolCall)
+		}
+	}
+	return calls
 }
 
 // SystemMessage creates a system message with a single text part.
@@ -193,16 +204,16 @@ const (
 
 // ToolChoice specifies how the model should select tools.
 type ToolChoice struct {
-	Mode     ToolChoiceMode
-	ToolName string // required when Mode == ToolChoiceNamed
+	Mode     ToolChoiceMode `json:"mode"`
+	ToolName string         `json:"tool_name,omitempty"`
 }
 
 // ToolDefinition describes a tool the model can call.
 type ToolDefinition struct {
-	Name        string          // unique identifier
-	Description string          // human-readable description
-	Parameters  json.RawMessage // JSON Schema with root type "object"
-	params      []Param         // retained from NewTool for runtime validation
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+	params      []Param
 }
 
 // ParseArgs unmarshals a tool call's arguments and validates them against
@@ -316,42 +327,104 @@ func NewTool(name, description string, params ...Param) ToolDefinition {
 	}
 }
 
-// Request is the unified request to any LLM provider.
-type Request struct {
-	Model           string
-	Messages        []Message
-	Provider        string
-	Tools           []ToolDefinition
-	ToolChoice      *ToolChoice
-	Temperature     *float64
-	TopP            *float64
-	MaxTokens       *int
-	StopSequences   []string
-	ReasoningEffort string         // "low", "medium", "high"
-	ProviderOptions map[string]any // escape hatch
+// Config holds inference parameters for a conversation.
+type Config struct {
+	MaxTokens     *int        `json:"max_tokens,omitempty"`
+	Temperature   *float64    `json:"temperature,omitempty"`
+	TopP          *float64    `json:"top_p,omitempty"`
+	StopSequences []string    `json:"stop_sequences,omitempty"`
+	ToolChoice    *ToolChoice `json:"tool_choice,omitempty"`
+}
+
+// Conversation represents a full conversation with a model.
+type Conversation struct {
+	Model    string           `json:"model"`
+	System   []string         `json:"system,omitempty"`
+	Messages []Message        `json:"messages"`
+	Tools    []ToolDefinition `json:"tools,omitempty"`
+	Config   Config           `json:"config,omitempty"`
+	Usage    Usage            `json:"usage"`
+}
+
+// ConversationOption is a functional option for NewConversation.
+type ConversationOption func(*Conversation)
+
+// WithSystem appends system strings to the conversation.
+func WithSystem(texts ...string) ConversationOption {
+	return func(c *Conversation) {
+		c.System = append(c.System, texts...)
+	}
+}
+
+// WithTools sets the tools on the conversation.
+func WithTools(tools ...ToolDefinition) ConversationOption {
+	return func(c *Conversation) {
+		c.Tools = tools
+	}
+}
+
+// WithMaxTokens sets the max tokens config.
+func WithMaxTokens(n int) ConversationOption {
+	return func(c *Conversation) {
+		c.Config.MaxTokens = &n
+	}
+}
+
+// WithTemperature sets the temperature config.
+func WithTemperature(t float64) ConversationOption {
+	return func(c *Conversation) {
+		c.Config.Temperature = &t
+	}
+}
+
+// WithTopP sets the top-p config.
+func WithTopP(p float64) ConversationOption {
+	return func(c *Conversation) {
+		c.Config.TopP = &p
+	}
+}
+
+// WithStopSequences sets the stop sequences config.
+func WithStopSequences(seqs ...string) ConversationOption {
+	return func(c *Conversation) {
+		c.Config.StopSequences = seqs
+	}
+}
+
+// WithToolChoice sets the tool choice config.
+func WithToolChoice(tc ToolChoice) ConversationOption {
+	return func(c *Conversation) {
+		c.Config.ToolChoice = &tc
+	}
+}
+
+// NewConversation creates a Conversation with the given model and options.
+func NewConversation(model string, opts ...ConversationOption) Conversation {
+	c := Conversation{Model: model}
+	for _, opt := range opts {
+		opt(&c)
+	}
+	return c
 }
 
 // FinishReason describes why generation stopped.
-type FinishReason struct {
-	Reason string // unified: "stop", "length", "tool_calls", "content_filter", "error"
-	Raw    string // provider's native string
-}
+type FinishReason string
 
 const (
-	FinishReasonStop          = "stop"
-	FinishReasonLength        = "length"
-	FinishReasonToolCalls     = "tool_calls"
-	FinishReasonContentFilter = "content_filter"
-	FinishReasonError         = "error"
+	FinishReasonStop          FinishReason = "stop"
+	FinishReasonLength        FinishReason = "length"
+	FinishReasonToolUse       FinishReason = "tool_use"
+	FinishReasonContentFilter FinishReason = "content_filter"
+	FinishReasonError         FinishReason = "error"
 )
 
 // Usage contains token counts from the response.
 type Usage struct {
-	InputTokens      int
-	OutputTokens     int
-	CacheReadTokens  int
-	CacheWriteTokens int
-	ReasoningTokens  int
+	InputTokens      int `json:"input_tokens"`
+	OutputTokens     int `json:"output_tokens"`
+	CacheReadTokens  int `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
+	ReasoningTokens  int `json:"reasoning_tokens,omitempty"`
 }
 
 // Add sums two Usage values.
@@ -367,27 +440,7 @@ func (u Usage) Add(other Usage) Usage {
 
 // Response is the unified response from any LLM provider.
 type Response struct {
-	ID           string
-	Model        string
-	Provider     string
-	Message      Message
-	FinishReason FinishReason
-	Usage        Usage
-	Raw          []byte // raw provider response JSON
-}
-
-// Text returns concatenated text from all text content parts.
-func (r *Response) Text() string {
-	return r.Message.Text()
-}
-
-// ToolCalls returns all tool call content parts from the response message.
-func (r *Response) ToolCalls() []ToolCallData {
-	var calls []ToolCallData
-	for _, p := range r.Message.Content {
-		if p.Kind == ContentToolCall && p.ToolCall != nil {
-			calls = append(calls, *p.ToolCall)
-		}
-	}
-	return calls
+	Message      Message      `json:"message"`
+	FinishReason FinishReason `json:"finish_reason"`
+	Usage        Usage        `json:"usage"`
 }

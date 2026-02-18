@@ -149,6 +149,22 @@ func TestOptionalBoolParam(t *testing.T) {
 	}
 }
 
+func testAssertJSONEqual(t *testing.T, got, want []byte) {
+	t.Helper()
+	var gotVal, wantVal any
+	if err := json.Unmarshal(got, &gotVal); err != nil {
+		t.Fatalf("failed to parse got JSON: %v\nraw: %s", err, got)
+	}
+	if err := json.Unmarshal(want, &wantVal); err != nil {
+		t.Fatalf("failed to parse want JSON: %v\nraw: %s", err, want)
+	}
+	gotNorm, _ := json.MarshalIndent(gotVal, "", "  ")
+	wantNorm, _ := json.MarshalIndent(wantVal, "", "  ")
+	if string(gotNorm) != string(wantNorm) {
+		t.Errorf("JSON mismatch.\ngot:\n%s\nwant:\n%s", gotNorm, wantNorm)
+	}
+}
+
 func TestNewToolMixedParams(t *testing.T) {
 	tool := NewTool("get_weather", "Get the current weather",
 		StringParam("location", "The city"),
@@ -161,19 +177,19 @@ func TestNewToolMixedParams(t *testing.T) {
 		t.Errorf("Description = %q", tool.Description)
 	}
 	want := `{"type":"object","properties":{"location":{"type":"string","description":"The city"},"days":{"type":"number","description":"Forecast days"}},"required":["location"]}`
-	assertJSONEqual(t, tool.Parameters, []byte(want))
+	testAssertJSONEqual(t, tool.Parameters, []byte(want))
 }
 
 func TestNewToolNoParams(t *testing.T) {
 	tool := NewTool("noop", "Does nothing")
 	want := `{"type":"object","properties":{},"required":[]}`
-	assertJSONEqual(t, tool.Parameters, []byte(want))
+	testAssertJSONEqual(t, tool.Parameters, []byte(want))
 }
 
 func TestNewToolNoDescription(t *testing.T) {
 	tool := NewTool("ping", "Ping a host", StringParam("host"))
 	want := `{"type":"object","properties":{"host":{"type":"string"}},"required":["host"]}`
-	assertJSONEqual(t, tool.Parameters, []byte(want))
+	testAssertJSONEqual(t, tool.Parameters, []byte(want))
 }
 
 func TestToolCallDataParseArgs(t *testing.T) {
@@ -360,5 +376,95 @@ func TestToolDefinitionParseArgsNoParams(t *testing.T) {
 	}
 	if len(args) != 0 {
 		t.Errorf("expected empty args, got %v", args)
+	}
+}
+
+func TestConversationJSONRoundTrip(t *testing.T) {
+	maxTok := 4096
+	temp := 0.7
+	conv := Conversation{
+		Model:  "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+		System: []string{"You are helpful."},
+		Messages: []Message{
+			{Role: RoleUser, Content: []ContentPart{{Kind: ContentText, Text: "hello"}}},
+			{Role: RoleAssistant, Content: []ContentPart{{Kind: ContentText, Text: "hi"}}},
+		},
+		Config: Config{
+			MaxTokens:   &maxTok,
+			Temperature: &temp,
+		},
+		Usage: Usage{InputTokens: 10, OutputTokens: 5},
+	}
+	data, err := json.Marshal(conv)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var restored Conversation
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if restored.Model != conv.Model {
+		t.Errorf("Model = %q, want %q", restored.Model, conv.Model)
+	}
+	if len(restored.System) != 1 || restored.System[0] != "You are helpful." {
+		t.Errorf("System = %v", restored.System)
+	}
+	if len(restored.Messages) != 2 {
+		t.Errorf("Messages len = %d", len(restored.Messages))
+	}
+	if restored.Messages[0].Content[0].Text != "hello" {
+		t.Errorf("first message text = %q", restored.Messages[0].Content[0].Text)
+	}
+	if *restored.Config.MaxTokens != 4096 {
+		t.Errorf("MaxTokens = %d", *restored.Config.MaxTokens)
+	}
+	if *restored.Config.Temperature != 0.7 {
+		t.Errorf("Temperature = %f", *restored.Config.Temperature)
+	}
+	if restored.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d", restored.Usage.InputTokens)
+	}
+}
+
+func TestNewConversation(t *testing.T) {
+	tool := NewTool("greet", "Say hello", StringParam("name"))
+	conv := NewConversation("my-model",
+		WithSystem("Be helpful."),
+		WithTools(tool),
+		WithMaxTokens(1024),
+		WithTemperature(0.5),
+	)
+	if conv.Model != "my-model" {
+		t.Errorf("Model = %q", conv.Model)
+	}
+	if len(conv.System) != 1 || conv.System[0] != "Be helpful." {
+		t.Errorf("System = %v", conv.System)
+	}
+	if len(conv.Tools) != 1 || conv.Tools[0].Name != "greet" {
+		t.Errorf("Tools = %v", conv.Tools)
+	}
+	if *conv.Config.MaxTokens != 1024 {
+		t.Errorf("MaxTokens = %v", conv.Config.MaxTokens)
+	}
+	if *conv.Config.Temperature != 0.5 {
+		t.Errorf("Temperature = %v", conv.Config.Temperature)
+	}
+}
+
+func TestMessageToolCalls(t *testing.T) {
+	m := Message{
+		Role: RoleAssistant,
+		Content: []ContentPart{
+			{Kind: ContentText, Text: "Let me check."},
+			{Kind: ContentToolCall, ToolCall: &ToolCallData{ID: "c1", Name: "foo"}},
+			{Kind: ContentToolCall, ToolCall: &ToolCallData{ID: "c2", Name: "bar"}},
+		},
+	}
+	calls := m.ToolCalls()
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(calls))
+	}
+	if calls[0].ID != "c1" || calls[1].ID != "c2" {
+		t.Errorf("calls = %+v", calls)
 	}
 }
