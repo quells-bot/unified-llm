@@ -1,5 +1,5 @@
-// Package llm provides a unified interface for calling LLM providers through AWS Bedrock.
+// Package llm provides a Conversation-centric wrapper around the AWS Bedrock Converse API.
 //
-// The package supports Anthropic (Claude) and OpenAI models with automatic prompt caching,
-// tool use, and a middleware system for cross-cutting concerns.
+// The Conversation type holds the entire conversation state as serializable data,
+// making it a natural fit for Temporal workflow payloads and other persistence mechanisms.
 package llm

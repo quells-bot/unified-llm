@@ -2,145 +2,161 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
-// mockInvoker is a test double for BedrockInvoker.
-type mockInvoker struct {
-	response []byte
-	err      error
+// mockConverser is a test double for BedrockConverser.
+type mockConverser struct {
+	output *bedrockruntime.ConverseOutput
+	err    error
 }
 
-func (m *mockInvoker) InvokeModel(_ context.Context, params *bedrockruntime.InvokeModelInput, _ ...func(*bedrockruntime.Options)) (*bedrockruntime.InvokeModelOutput, error) {
+func (m *mockConverser) Converse(_ context.Context, _ *bedrockruntime.ConverseInput, _ ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseOutput, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &bedrockruntime.InvokeModelOutput{
-		Body: m.response,
-	}, nil
+	return m.output, nil
 }
 
-func TestClientComplete_RoutesToCorrectAdapter(t *testing.T) {
-	anthropicResp := `{"id":"msg_1","type":"message","role":"assistant","model":"claude","content":[{"type":"text","text":"from anthropic"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
-	openaiResp := `{"id":"chat_1","model":"gpt","choices":[{"index":0,"message":{"role":"assistant","content":"from openai"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`
-
-	tests := []struct {
-		name     string
-		provider string
-		response string
-		wantText string
-	}{
-		{"anthropic", "anthropic", anthropicResp, "from anthropic"},
-		{"openai", "openai", openaiResp, "from openai"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := NewClient(&mockInvoker{response: []byte(tt.response)},
-				WithAdapter(NewAnthropicAdapter()),
-				WithAdapter(NewOpenAIAdapter()),
-			)
-			resp, err := client.Complete(context.Background(), &Request{
-				Model:    "test-model",
-				Provider: tt.provider,
-				Messages: []Message{UserMessage("hello")},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if resp.Text() != tt.wantText {
-				t.Errorf("Text = %q, want %q", resp.Text(), tt.wantText)
-			}
-		})
+func simpleConverseOutput(text string) *bedrockruntime.ConverseOutput {
+	return &bedrockruntime.ConverseOutput{
+		Output: &types.ConverseOutputMemberMessage{
+			Value: types.Message{
+				Role: types.ConversationRoleAssistant,
+				Content: []types.ContentBlock{
+					&types.ContentBlockMemberText{Value: text},
+				},
+			},
+		},
+		StopReason: types.StopReasonEndTurn,
+		Usage: &types.TokenUsage{
+			InputTokens:  int32Ptr(10),
+			OutputTokens: int32Ptr(5),
+			TotalTokens:  int32Ptr(15),
+		},
 	}
 }
 
-func TestClientComplete_UsesDefaultProvider(t *testing.T) {
-	resp := `{"id":"msg_1","type":"message","role":"assistant","model":"claude","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
-	client := NewClient(&mockInvoker{response: []byte(resp)},
-		WithAdapter(NewAnthropicAdapter()),
-		WithDefaultProvider("anthropic"),
+func int32Ptr(v int32) *int32 { return &v }
+
+func TestClientSend_SimpleText(t *testing.T) {
+	client := NewClient(&mockConverser{output: simpleConverseOutput("Hello!")})
+
+	conv := NewConversation("us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+		WithSystem("Be helpful."),
+		WithMaxTokens(1024),
 	)
-	result, err := client.Complete(context.Background(), &Request{
-		Model:    "test-model",
-		Messages: []Message{UserMessage("hello")},
-	})
+
+	conv, resp, err := client.Send(context.Background(), conv, UserMessage("hi"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Text() != "ok" {
-		t.Errorf("Text = %q", result.Text())
+	if resp.Message.Text() != "Hello!" {
+		t.Errorf("Text = %q", resp.Message.Text())
+	}
+	if resp.FinishReason != FinishReasonStop {
+		t.Errorf("FinishReason = %q", resp.FinishReason)
+	}
+	if len(conv.Messages) != 2 {
+		t.Errorf("Messages len = %d", len(conv.Messages))
+	}
+	if conv.Messages[0].Text() != "hi" {
+		t.Errorf("Messages[0] = %q", conv.Messages[0].Text())
+	}
+	if conv.Messages[1].Text() != "Hello!" {
+		t.Errorf("Messages[1] = %q", conv.Messages[1].Text())
+	}
+	if conv.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d", conv.Usage.InputTokens)
 	}
 }
 
-func TestClientComplete_NoProviderReturnsConfigError(t *testing.T) {
-	client := NewClient(&mockInvoker{},
-		WithAdapter(NewAnthropicAdapter()),
-	)
-	_, err := client.Complete(context.Background(), &Request{
-		Model:    "test-model",
-		Messages: []Message{UserMessage("hello")},
-	})
+func TestClientSend_AccumulatesUsage(t *testing.T) {
+	mock := &mockConverser{output: simpleConverseOutput("reply")}
+	client := NewClient(mock)
+
+	conv := NewConversation("model")
+	conv, _, err := client.Send(context.Background(), conv, UserMessage("first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv, _, err = client.Send(context.Background(), conv, UserMessage("second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if conv.Usage.InputTokens != 20 {
+		t.Errorf("InputTokens = %d, want 20", conv.Usage.InputTokens)
+	}
+	if len(conv.Messages) != 4 {
+		t.Errorf("Messages len = %d, want 4", len(conv.Messages))
+	}
+}
+
+func TestClientSend_BedrockError(t *testing.T) {
+	mock := &mockConverser{err: &types.ThrottlingException{Message: strPtr("slow down")}}
+	client := NewClient(mock)
+
+	conv := NewConversation("model")
+	_, _, err := client.Send(context.Background(), conv, UserMessage("hi"))
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	var llmErr *Error
-	if !errors.As(err, &llmErr) || llmErr.Kind != ErrConfig {
-		t.Errorf("expected ErrConfig, got %v", err)
+	if !errors.As(err, &llmErr) {
+		t.Fatalf("expected *Error, got %T", err)
+	}
+	if llmErr.Kind != ErrRateLimit {
+		t.Errorf("Kind = %v, want ErrRateLimit", llmErr.Kind)
 	}
 }
 
-func TestClientComplete_UnknownProviderReturnsConfigError(t *testing.T) {
-	client := NewClient(&mockInvoker{},
-		WithAdapter(NewAnthropicAdapter()),
-		WithDefaultProvider("anthropic"),
-	)
-	_, err := client.Complete(context.Background(), &Request{
-		Model:    "test-model",
-		Provider: "gemini",
-		Messages: []Message{UserMessage("hello")},
-	})
-	if err == nil {
-		t.Fatal("expected error")
+func TestClientSend_ImmutableConversation(t *testing.T) {
+	client := NewClient(&mockConverser{output: simpleConverseOutput("reply")})
+
+	original := NewConversation("model")
+	updated, _, err := client.Send(context.Background(), original, UserMessage("hi"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	var llmErr *Error
-	if !errors.As(err, &llmErr) || llmErr.Kind != ErrConfig {
-		t.Errorf("expected ErrConfig, got %v", err)
+
+	if len(original.Messages) != 0 {
+		t.Errorf("original Messages len = %d, want 0", len(original.Messages))
+	}
+	if len(updated.Messages) != 2 {
+		t.Errorf("updated Messages len = %d, want 2", len(updated.Messages))
 	}
 }
 
-func TestClientComplete_MiddlewareExecutionOrder(t *testing.T) {
+func TestClientSend_MiddlewareOrder(t *testing.T) {
 	var order []string
-	mw1 := func(ctx context.Context, req *Request, next CompleteFunc) (*Response, error) {
+	mw1 := func(ctx context.Context, conv *Conversation, next SendFunc) (*Response, error) {
 		order = append(order, "mw1-before")
-		resp, err := next(ctx, req)
+		resp, err := next(ctx, conv)
 		order = append(order, "mw1-after")
 		return resp, err
 	}
-	mw2 := func(ctx context.Context, req *Request, next CompleteFunc) (*Response, error) {
+	mw2 := func(ctx context.Context, conv *Conversation, next SendFunc) (*Response, error) {
 		order = append(order, "mw2-before")
-		resp, err := next(ctx, req)
+		resp, err := next(ctx, conv)
 		order = append(order, "mw2-after")
 		return resp, err
 	}
 
-	resp := `{"id":"msg_1","type":"message","role":"assistant","model":"claude","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
-	client := NewClient(&mockInvoker{response: []byte(resp)},
-		WithAdapter(NewAnthropicAdapter()),
-		WithDefaultProvider("anthropic"),
+	client := NewClient(
+		&mockConverser{output: simpleConverseOutput("ok")},
 		WithMiddleware(mw1, mw2),
 	)
-	_, err := client.Complete(context.Background(), &Request{
-		Model:    "test-model",
-		Messages: []Message{UserMessage("hello")},
-	})
+	conv := NewConversation("model")
+	_, _, err := client.Send(context.Background(), conv, UserMessage("hi"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	want := []string{"mw1-before", "mw2-before", "mw2-after", "mw1-after"}
 	if len(order) != len(want) {
 		t.Fatalf("order = %v, want %v", order, want)
@@ -151,32 +167,3 @@ func TestClientComplete_MiddlewareExecutionOrder(t *testing.T) {
 		}
 	}
 }
-
-func TestClientComplete_MiddlewareCanModifyRequest(t *testing.T) {
-	// Middleware that injects a provider option
-	mw := func(ctx context.Context, req *Request, next CompleteFunc) (*Response, error) {
-		if req.ProviderOptions == nil {
-			req.ProviderOptions = make(map[string]any)
-		}
-		req.ProviderOptions["test"] = "injected"
-		return next(ctx, req)
-	}
-
-	resp := `{"id":"msg_1","type":"message","role":"assistant","model":"claude","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
-	client := NewClient(&mockInvoker{response: []byte(resp)},
-		WithAdapter(NewAnthropicAdapter()),
-		WithDefaultProvider("anthropic"),
-		WithMiddleware(mw),
-	)
-	_, err := client.Complete(context.Background(), &Request{
-		Model:    "test-model",
-		Messages: []Message{UserMessage("hello")},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// If we got here without error, middleware ran successfully
-}
-
-// Suppress unused import
-var _ = json.Marshal

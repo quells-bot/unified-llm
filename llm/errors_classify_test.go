@@ -73,7 +73,7 @@ func TestClassifyBedrockError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := classifyBedrockError("anthropic", tt.err)
+			result := classifyBedrockError(tt.err)
 			var llmErr *Error
 			if !errors.As(result, &llmErr) {
 				t.Fatalf("expected *Error, got %T", result)
@@ -84,11 +84,6 @@ func TestClassifyBedrockError(t *testing.T) {
 			if llmErr.Cause != tt.err {
 				t.Error("Cause should be the original error")
 			}
-			if llmErr.Provider != "anthropic" {
-				t.Errorf("Provider = %q", llmErr.Provider)
-			}
 		})
 	}
 }
-
-func strPtr(s string) *string { return &s }

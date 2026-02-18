@@ -6,20 +6,18 @@ import "fmt"
 type ErrorKind int
 
 const (
-	ErrConfig         ErrorKind = iota // misconfiguration
-	ErrAdapter                         // marshal/unmarshal failure in adapter
-	ErrAuthentication                  // 401/403
-	ErrNotFound                        // 404
-	ErrInvalidRequest                  // 400
-	ErrRateLimit                       // 429
-	ErrServer                          // 500+
-	ErrContextLength                   // input too large
-	ErrContentFilter                   // blocked by safety guardrails
+	ErrConfig        ErrorKind = iota // misconfiguration
+	ErrAuthentication                 // 401/403
+	ErrNotFound                       // 404
+	ErrInvalidRequest                 // 400
+	ErrRateLimit                      // 429
+	ErrServer                         // 500+
+	ErrContextLength                  // input too large
+	ErrContentFilter                  // blocked by safety guardrails
 )
 
 var errorKindNames = [...]string{
 	ErrConfig:         "config",
-	ErrAdapter:        "adapter",
 	ErrAuthentication: "authentication",
 	ErrNotFound:       "not_found",
 	ErrInvalidRequest: "invalid_request",
@@ -38,17 +36,12 @@ func (k ErrorKind) String() string {
 
 // Error is the library's error type.
 type Error struct {
-	Kind     ErrorKind
-	Provider string
-	Message  string
-	Cause    error  // underlying error
-	Raw      []byte // raw response body if available
+	Kind    ErrorKind
+	Message string
+	Cause   error // underlying error
 }
 
 func (e *Error) Error() string {
-	if e.Provider != "" {
-		return fmt.Sprintf("llm [%s] %s: %s", e.Kind, e.Provider, e.Message)
-	}
 	return fmt.Sprintf("llm [%s]: %s", e.Kind, e.Message)
 }
 

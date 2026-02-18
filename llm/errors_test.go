@@ -8,11 +8,10 @@ import (
 
 func TestErrorImplementsError(t *testing.T) {
 	e := &Error{
-		Kind:     ErrConfig,
-		Provider: "anthropic",
-		Message:  "no adapter registered",
+		Kind:    ErrConfig,
+		Message: "no default provider",
 	}
-	want := "llm [config] anthropic: no adapter registered"
+	want := "llm [config]: no default provider"
 	if got := e.Error(); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -36,7 +35,6 @@ func TestErrorKindString(t *testing.T) {
 		want string
 	}{
 		{ErrConfig, "config"},
-		{ErrAdapter, "adapter"},
 		{ErrAuthentication, "authentication"},
 		{ErrNotFound, "not_found"},
 		{ErrInvalidRequest, "invalid_request"},
@@ -49,13 +47,5 @@ func TestErrorKindString(t *testing.T) {
 		if got := tt.kind.String(); got != tt.want {
 			t.Errorf("ErrorKind(%d).String() = %q, want %q", tt.kind, got, tt.want)
 		}
-	}
-}
-
-func TestErrorWithoutProvider(t *testing.T) {
-	e := &Error{Kind: ErrConfig, Message: "no default provider"}
-	want := "llm [config]: no default provider"
-	if got := e.Error(); got != want {
-		t.Errorf("got %q, want %q", got, want)
 	}
 }
