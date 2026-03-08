@@ -1,8 +1,15 @@
 # unified-llm
 
-A Go wrapper around the AWS Bedrock Converse API with an ergonomic, serialization-friendly design.
+A Go library for LLM conversations with a pluggable provider backend and an ergonomic, serialization-friendly design.
 
 The central type is `Conversation` — a plain, JSON-serializable struct that holds the full conversation state: model, system prompts, messages, tools, config, and cumulative token usage. It is a natural fit for Temporal workflows, databases, or any system that needs to persist or pass conversation state between steps.
+
+## Providers
+
+| Provider | Backend | Constructor | Dependencies |
+|----------|---------|-------------|--------------|
+| **Bedrock** | AWS Bedrock Converse API | `NewClient(bedrockClient)` | `aws-sdk-go-v2/service/bedrockruntime` |
+| **OpenAI** | Any OpenAI-compatible API (llama.cpp, vLLM, Ollama, OpenAI) | `NewClientWithProvider(NewOpenAIProvider(baseURL))` | stdlib only |
 
 ## Installation
 
@@ -11,6 +18,8 @@ go get github.com/quells-bot/unified-llm
 ```
 
 ## Usage
+
+### AWS Bedrock
 
 ```go
 import (
@@ -24,6 +33,26 @@ client := llm.NewClient(bedrockruntime.NewFromConfig(cfg))
 
 conv := llm.NewConversation(
     "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    llm.WithSystem("You are a helpful assistant."),
+    llm.WithMaxTokens(4096),
+)
+
+conv, resp, err := client.Send(ctx, conv, llm.UserMessage("Hello!"))
+fmt.Println(resp.Message.Text())
+```
+
+### OpenAI-compatible (llama.cpp, vLLM, Ollama)
+
+```go
+import "github.com/quells-bot/unified-llm/llm"
+
+provider := llm.NewOpenAIProvider("http://localhost:8080",
+    llm.WithAPIKey("optional-key"),  // omit if not needed
+)
+client := llm.NewClientWithProvider(provider)
+
+conv := llm.NewConversation(
+    "llama3",
     llm.WithSystem("You are a helpful assistant."),
     llm.WithMaxTokens(4096),
 )
@@ -69,6 +98,7 @@ logger := func(ctx context.Context, conv *llm.Conversation, next llm.SendFunc) (
 }
 
 client := llm.NewClient(bd, llm.WithMiddleware(logger))
+// or: llm.NewClientWithProvider(provider, llm.WithMiddleware(logger))
 ```
 
 ## Error handling
