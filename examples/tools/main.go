@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -16,6 +17,18 @@ const (
 	sonnet     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 )
 
+
+func roundtripJSON(conv llm.Conversation) llm.Conversation {
+	data, err := json.Marshal(conv)
+	if err != nil {
+		log.Fatalf("failed to marshal conversation: %v", err)
+	}
+	var out llm.Conversation
+	if err := json.Unmarshal(data, &out); err != nil {
+		log.Fatalf("failed to unmarshal conversation: %v", err)
+	}
+	return out
+}
 
 func main() {
 	ctx := context.Background()
@@ -57,6 +70,7 @@ func main() {
 		log.Printf("failed to send: %v", err)
 		return
 	}
+	conv = roundtripJSON(conv)
 
 	for resp.FinishReason == llm.FinishReasonToolUse {
 		log.Printf("< %s", resp.Message.Text())
@@ -110,6 +124,7 @@ func main() {
 			log.Printf("failed to send: %v", err)
 			return
 		}
+		conv = roundtripJSON(conv)
 	}
 
 	log.Printf("< %s", resp.Message.Text())
