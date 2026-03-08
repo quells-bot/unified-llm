@@ -15,7 +15,7 @@ go run ./examples/tools/         # run the tools example (requires AWS credentia
 
 ## Architecture
 
-This is a Go library (`github.com/quells-bot/unified-llm`) with a single package `llm` that wraps the AWS Bedrock Converse API. The only dependency is `aws-sdk-go-v2/service/bedrockruntime`.
+This is a Go library (`github.com/quells-bot/unified-llm`) with a single package `llm` that supports multiple LLM backends through a `Provider` interface. The AWS Bedrock provider uses `aws-sdk-go-v2/service/bedrockruntime`; the OpenAI-compatible provider uses only stdlib (`net/http` + `encoding/json`).
 
 ### Core design
 
@@ -24,16 +24,40 @@ This is a Go library (`github.com/quells-bot/unified-llm`) with a single package
 `Client.Send(ctx, conv, messages...)` is the primary entry point. It:
 1. Appends the new messages to a **copy** of `conv.Messages` (caller's conversation is never mutated)
 2. Runs the middleware chain
-3. Calls Bedrock Converse via `BedrockConverser` (an interface, mockable in tests)
+3. Delegates to the configured `Provider` implementation
 4. Appends the assistant response and accumulates usage onto the returned conversation
 
 The returned `Conversation` is the updated state; the returned `*Response` is the per-turn result.
 
-### Key translation layer (`converse.go`)
+### Provider interface (`client.go`)
 
-- Consecutive `RoleTool` messages are merged into a single Bedrock user message (Bedrock requires all tool results for an assistant turn in one message)
-- Anthropic models (`strings.Contains(model, "anthropic.")`) get cache points automatically appended after the last system block and after the last tool definition
-- `toConverseInput` / `fromConverseOutput` handle all translation between the library's types and Bedrock SDK types
+`Provider` is the abstraction that decouples `Client` from any specific backend:
+
+```go
+type Provider interface {
+    Send(ctx context.Context, conv *Conversation) (*Response, error)
+}
+```
+
+Each provider owns its full pipeline: type translation, API call, response translation, and error classification into `*Error` with the appropriate `ErrorKind`.
+
+- **`NewClient(bedrock)`** — convenience constructor for the Bedrock provider (backward compatible)
+- **`NewClientWithProvider(provider)`** — generic constructor for any provider
+
+### Providers
+
+**BedrockProvider** (`provider_bedrock.go`):
+- Wraps `BedrockConverser` interface (mockable in tests)
+- Uses `toConverseInput` / `fromConverseOutput` in `converse.go` for translation
+- Consecutive `RoleTool` messages are merged into a single Bedrock user message
+- Anthropic models get cache points automatically appended after system blocks and tool definitions
+- Error classification via Bedrock SDK exception types
+
+**OpenAIProvider** (`provider_openai.go`):
+- Calls `POST {baseURL}/v1/chat/completions` — works with llama.cpp, vLLM, Ollama, OpenAI, etc.
+- Stdlib only (`net/http` + `encoding/json`), no additional dependencies
+- Configurable via `WithAPIKey(key)` and `WithHTTPClient(c)`
+- Error classification via HTTP status codes
 
 ### Tool handling pattern
 
@@ -41,8 +65,8 @@ Tools are defined with `NewTool(name, description, params...)` using `StringPara
 
 ### Middleware
 
-`WithMiddleware(m ...Middleware)` on `NewClient`. First registered = outermost wrapper. Signature: `func(ctx, conv *Conversation, next SendFunc) (*Response, error)`.
+`WithMiddleware(m ...Middleware)` on `NewClient` or `NewClientWithProvider`. First registered = outermost wrapper. Signature: `func(ctx, conv *Conversation, next SendFunc) (*Response, error)`. Middleware works identically regardless of provider.
 
 ### Error handling
 
-All errors from `Send` are `*llm.Error` with a `Kind` field (`ErrRateLimit`, `ErrContextLength`, `ErrContentFilter`, etc.) and an `Unwrap`-able `Cause`.
+All errors from `Send` are `*llm.Error` with a `Kind` field (`ErrRateLimit`, `ErrContextLength`, `ErrContentFilter`, etc.) and an `Unwrap`-able `Cause`. Each provider classifies its own errors into these kinds.
