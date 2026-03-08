@@ -2,51 +2,37 @@ package llm
 
 import (
 	"context"
-	"errors"
 	"testing"
-
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
-// mockConverser is a test double for BedrockConverser.
-type mockConverser struct {
-	output *bedrockruntime.ConverseOutput
-	err    error
+// mockProvider is a test double for Provider.
+type mockProvider struct {
+	resp *Response
+	err  error
 }
 
-func (m *mockConverser) Converse(_ context.Context, _ *bedrockruntime.ConverseInput, _ ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseOutput, error) {
+func (m *mockProvider) Send(_ context.Context, _ *Conversation) (*Response, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return m.output, nil
+	return m.resp, nil
 }
 
-func simpleConverseOutput(text string) *bedrockruntime.ConverseOutput {
-	return &bedrockruntime.ConverseOutput{
-		Output: &types.ConverseOutputMemberMessage{
-			Value: types.Message{
-				Role: types.ConversationRoleAssistant,
-				Content: []types.ContentBlock{
-					&types.ContentBlockMemberText{Value: text},
-				},
-			},
+func simpleResponse(text string) *Response {
+	return &Response{
+		Message: Message{
+			Role:    RoleAssistant,
+			Content: []ContentPart{{Kind: ContentText, Text: text}},
 		},
-		StopReason: types.StopReasonEndTurn,
-		Usage: &types.TokenUsage{
-			InputTokens:  int32Ptr(10),
-			OutputTokens: int32Ptr(5),
-			TotalTokens:  int32Ptr(15),
-		},
+		FinishReason: FinishReasonStop,
+		Usage:        Usage{InputTokens: 10, OutputTokens: 5},
 	}
 }
 
-func int32Ptr(v int32) *int32 { return &v }
-
 func TestClientSend_SimpleText(t *testing.T) {
-	client := NewClient(&mockConverser{output: simpleConverseOutput("Hello!")})
+	client := NewClientWithProvider(&mockProvider{resp: simpleResponse("Hello!")})
 
-	conv := NewConversation("us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+	conv := NewConversation("test-model",
 		WithSystem("Be helpful."),
 		WithMaxTokens(1024),
 	)
@@ -76,8 +62,7 @@ func TestClientSend_SimpleText(t *testing.T) {
 }
 
 func TestClientSend_AccumulatesUsage(t *testing.T) {
-	mock := &mockConverser{output: simpleConverseOutput("reply")}
-	client := NewClient(mock)
+	client := NewClientWithProvider(&mockProvider{resp: simpleResponse("reply")})
 
 	conv := NewConversation("model")
 	conv, _, err := client.Send(context.Background(), conv, UserMessage("first"))
@@ -97,17 +82,18 @@ func TestClientSend_AccumulatesUsage(t *testing.T) {
 	}
 }
 
-func TestClientSend_BedrockError(t *testing.T) {
-	mock := &mockConverser{err: &types.ThrottlingException{Message: strPtr("slow down")}}
-	client := NewClient(mock)
+func TestClientSend_ProviderError(t *testing.T) {
+	client := NewClientWithProvider(&mockProvider{
+		err: &Error{Kind: ErrRateLimit, Message: "slow down"},
+	})
 
 	conv := NewConversation("model")
 	_, _, err := client.Send(context.Background(), conv, UserMessage("hi"))
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	var llmErr *Error
-	if !errors.As(err, &llmErr) {
+	llmErr, ok := err.(*Error)
+	if !ok {
 		t.Fatalf("expected *Error, got %T", err)
 	}
 	if llmErr.Kind != ErrRateLimit {
@@ -116,7 +102,7 @@ func TestClientSend_BedrockError(t *testing.T) {
 }
 
 func TestClientSend_ImmutableConversation(t *testing.T) {
-	client := NewClient(&mockConverser{output: simpleConverseOutput("reply")})
+	client := NewClientWithProvider(&mockProvider{resp: simpleResponse("reply")})
 
 	original := NewConversation("model")
 	updated, _, err := client.Send(context.Background(), original, UserMessage("hi"))
@@ -147,8 +133,8 @@ func TestClientSend_MiddlewareOrder(t *testing.T) {
 		return resp, err
 	}
 
-	client := NewClient(
-		&mockConverser{output: simpleConverseOutput("ok")},
+	client := NewClientWithProvider(
+		&mockProvider{resp: simpleResponse("ok")},
 		WithMiddleware(mw1, mw2),
 	)
 	conv := NewConversation("model")
