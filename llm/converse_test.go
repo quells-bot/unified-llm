@@ -330,9 +330,9 @@ func TestFromConverseOutput_CacheTokens(t *testing.T) {
 		},
 		StopReason: types.StopReasonEndTurn,
 		Usage: &types.TokenUsage{
-			InputTokens:          int32Ptr(100),
-			OutputTokens:         int32Ptr(50),
-			TotalTokens:          int32Ptr(150),
+			InputTokens:           int32Ptr(100),
+			OutputTokens:          int32Ptr(50),
+			TotalTokens:           int32Ptr(150),
 			CacheReadInputTokens:  int32Ptr(80),
 			CacheWriteInputTokens: int32Ptr(20),
 		},

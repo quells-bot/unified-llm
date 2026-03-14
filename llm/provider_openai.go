@@ -100,7 +100,7 @@ type chatCompletionRequest struct {
 
 type chatMessage struct {
 	Role             string         `json:"role"`
-	Content          *string        `json:"content"`           // pointer so we can send null
+	Content          *string        `json:"content"`                     // pointer so we can send null
 	ReasoningContent string         `json:"reasoning_content,omitempty"` // llama.cpp extended field
 	ToolCalls        []chatToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string         `json:"tool_call_id,omitempty"`
