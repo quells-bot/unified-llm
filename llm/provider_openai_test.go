@@ -61,6 +61,47 @@ func TestOpenAIProvider_SimpleText(t *testing.T) {
 	}
 }
 
+func TestOpenAIProvider_ReasoningContent(t *testing.T) {
+	resp := chatCompletionResponse{
+		Choices: []chatChoice{{
+			Message: chatMessage{
+				Role:             "assistant",
+				Content:          strPtr("42"),
+				ReasoningContent: "Let me think step by step...",
+			},
+			FinishReason: "stop",
+		}},
+		Usage: &chatUsage{PromptTokens: 10, CompletionTokens: 20},
+	}
+	srv, _ := newTestOpenAIServer(t, 200, resp)
+
+	provider := NewOpenAIProvider(srv.URL)
+	conv := NewConversation("qwen3")
+	conv.Messages = []Message{UserMessage("What is 6*7?")}
+
+	result, err := provider.Send(context.Background(), &conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Message.Content) != 2 {
+		t.Fatalf("Content len = %d, want 2", len(result.Message.Content))
+	}
+	// Thinking should come first.
+	if result.Message.Content[0].Kind != ContentThinking {
+		t.Errorf("Content[0].Kind = %v, want thinking", result.Message.Content[0].Kind)
+	}
+	if result.Message.Content[0].Thinking == nil || result.Message.Content[0].Thinking.Text != "Let me think step by step..." {
+		t.Errorf("Thinking.Text = %v", result.Message.Content[0].Thinking)
+	}
+	// Text should come second.
+	if result.Message.Content[1].Kind != ContentText {
+		t.Errorf("Content[1].Kind = %v, want text", result.Message.Content[1].Kind)
+	}
+	if result.Message.Content[1].Text != "42" {
+		t.Errorf("Text = %q", result.Message.Content[1].Text)
+	}
+}
+
 func TestOpenAIProvider_ToolCallResponse(t *testing.T) {
 	resp := chatCompletionResponse{
 		Choices: []chatChoice{{
