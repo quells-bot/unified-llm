@@ -99,10 +99,11 @@ type chatCompletionRequest struct {
 }
 
 type chatMessage struct {
-	Role       string         `json:"role"`
-	Content    *string        `json:"content"` // pointer so we can send null
-	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Role             string         `json:"role"`
+	Content          *string        `json:"content"`           // pointer so we can send null
+	ReasoningContent string         `json:"reasoning_content,omitempty"` // llama.cpp extended field
+	ToolCalls        []chatToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string         `json:"tool_call_id,omitempty"`
 }
 
 type chatToolCall struct {
@@ -252,6 +253,14 @@ func fromOpenAIResponse(resp chatCompletionResponse) (*Response, error) {
 
 	choice := resp.Choices[0]
 	msg := Message{Role: RoleAssistant}
+
+	// Reasoning content (e.g. llama.cpp reasoning_content field).
+	if choice.Message.ReasoningContent != "" {
+		msg.Content = append(msg.Content, ContentPart{
+			Kind:     ContentThinking,
+			Thinking: &ThinkingData{Text: choice.Message.ReasoningContent},
+		})
+	}
 
 	// Text content.
 	if choice.Message.Content != nil && *choice.Message.Content != "" {
